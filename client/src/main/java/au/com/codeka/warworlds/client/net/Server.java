@@ -1,5 +1,8 @@
 package au.com.codeka.warworlds.client.net;
 
+import android.content.Context;
+import android.os.Build;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -19,6 +22,7 @@ import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.debug.PacketDebug;
 import au.com.codeka.warworlds.common.net.PacketDecoder;
 import au.com.codeka.warworlds.common.net.PacketEncoder;
+import au.com.codeka.warworlds.common.proto.DeviceInfo;
 import au.com.codeka.warworlds.common.proto.HelloPacket;
 import au.com.codeka.warworlds.common.proto.LoginRequest;
 import au.com.codeka.warworlds.common.proto.LoginResponse;
@@ -86,6 +90,7 @@ public class Server {
           .method(HttpRequest.Method.POST)
           .body(new LoginRequest.Builder()
               .cookie(cookie)
+              .device_info(populateDeviceInfo())
               .build().encode())
           .build();
       if (request.getResponseCode() != 200) {
@@ -230,5 +235,15 @@ public class Server {
       @Nullable LoginResponse.LoginStatus loginStatus) {
     currState = new ServerStateEvent(ServerUrl.getUrl(), state, loginStatus);
     App.i.getEventBus().publish(currState);
+  }
+
+  private static DeviceInfo populateDeviceInfo() {
+    return new DeviceInfo.Builder()
+        .device_build(Build.ID)
+        .device_id(GameSettings.i.getString(GameSettings.Key.INSTANCE_ID))
+        .device_manufacturer(Build.MANUFACTURER)
+        .device_model(Build.MODEL)
+        .device_version(Build.VERSION.RELEASE)
+        .build();
   }
 }

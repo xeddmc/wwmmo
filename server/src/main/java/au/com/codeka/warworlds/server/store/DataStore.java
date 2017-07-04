@@ -16,6 +16,8 @@ public class DataStore {
   private final SequenceStore seq = new SequenceStore("seq.db");
   private final SectorsStore sectors = new SectorsStore("sectors.db");
   private final StarsStore stars = new StarsStore("stars.db");
+  private final StatsStore stats = new StatsStore("stats.db");
+  private final SuspiciousEventStore suspiciousEvents = new SuspiciousEventStore("suss-events.db");
 
   private DataStore() {
   }
@@ -43,6 +45,8 @@ public class DataStore {
       seq.open();
       sectors.open();
       stars.open();
+      stats.open();
+      suspiciousEvents.open();
     } catch (StoreException e) {
       log.error("Error creating databases.", e);
       throw new RuntimeException(e);
@@ -51,6 +55,8 @@ public class DataStore {
 
   public void close() {
     try {
+      suspiciousEvents.close();
+      stats.close();
       stars.close();
       sectors.close();
       seq.close();
@@ -89,5 +95,13 @@ public class DataStore {
 
   public StarsStore stars() {
     return stars;
+  }
+
+  public StatsStore stats() {
+    return stats;
+  }
+
+  public SuspiciousEventStore suspiciousEvents() {
+    return suspiciousEvents;
   }
 }
