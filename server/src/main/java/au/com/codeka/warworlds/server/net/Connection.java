@@ -23,6 +23,7 @@ import au.com.codeka.warworlds.server.world.WatchableObject;
 public class Connection implements PacketDecoder.PacketHandler {
   private final static Log log = new Log("Connection");
 
+  private final ServerSocketManager manager;
   private final Account account;
   private final WatchableObject<Empire> empire;
   private final byte[] encryptionKey;
@@ -31,7 +32,8 @@ public class Connection implements PacketDecoder.PacketHandler {
   private final PacketDecoder decoder;
   private final Player player;
 
-  public Connection(
+  Connection(
+      ServerSocketManager manager,
       HelloPacket helloPacket,
       Account account,
       WatchableObject<Empire> empire,
@@ -39,6 +41,7 @@ public class Connection implements PacketDecoder.PacketHandler {
       Socket socket,
       PacketDecoder decoder,
       OutputStream outs) {
+    this.manager = manager;
     this.account = account;
     this.empire = empire;
     this.encryptionKey = encryptionKey;
@@ -73,7 +76,8 @@ public class Connection implements PacketDecoder.PacketHandler {
 
   @Override
   public void onDisconnect() {
-    TaskRunner.i.runTask(() -> player.onDisconnect(), Threads.BACKGROUND);
+    TaskRunner.i.runTask(player::onDisconnect, Threads.BACKGROUND);
+    manager.onDisconnect(empire.get().id, this);
   }
 
   private PacketEncoder.PacketHandler packetEncodeHandler = new PacketEncoder.PacketHandler() {

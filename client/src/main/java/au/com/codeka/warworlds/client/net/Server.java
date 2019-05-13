@@ -1,12 +1,15 @@
 package au.com.codeka.warworlds.client.net;
 
-import android.content.Context;
 import android.os.Build;
+
+import com.google.firebase.iid.FirebaseInstanceId;
+import com.google.firebase.iid.InstanceIdResult;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Queue;
 
 import javax.annotation.Nonnull;
@@ -15,14 +18,15 @@ import javax.annotation.Nullable;
 import au.com.codeka.warworlds.client.App;
 import au.com.codeka.warworlds.client.concurrency.Threads;
 import au.com.codeka.warworlds.client.game.world.ChatManager;
+import au.com.codeka.warworlds.client.game.world.EmpireManager;
 import au.com.codeka.warworlds.client.game.world.StarManager;
 import au.com.codeka.warworlds.client.util.GameSettings;
-import au.com.codeka.warworlds.client.game.world.EmpireManager;
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.debug.PacketDebug;
 import au.com.codeka.warworlds.common.net.PacketDecoder;
 import au.com.codeka.warworlds.common.net.PacketEncoder;
 import au.com.codeka.warworlds.common.proto.DeviceInfo;
+import au.com.codeka.warworlds.common.proto.FcmDeviceInfo;
 import au.com.codeka.warworlds.common.proto.HelloPacket;
 import au.com.codeka.warworlds.common.proto.LoginRequest;
 import au.com.codeka.warworlds.common.proto.LoginResponse;
@@ -53,6 +57,9 @@ public class Server {
   /** A queue for storing packets while we attempt to reconnect. Will be null if we're connected. */
   @Nullable private Queue<Packet> queuedPackets;
 
+  /** A list of callbacks waiting for hello to complete. */
+  private ArrayList<Runnable> waitingForHello = new ArrayList<>();
+
   /** A lock used to guard access to the web socket/queue. */
   private final Object lock = new Object();
 
@@ -82,40 +89,56 @@ public class Server {
     login(cookie);
   }
 
-  private void login(@Nonnull String cookie) {
-    App.i.getTaskRunner().runTask(() -> {
-      log.info("Logging in: %s", ServerUrl.getUrl("/login"));
-      HttpRequest request = new HttpRequest.Builder()
-          .url(ServerUrl.getUrl("/login"))
-          .method(HttpRequest.Method.POST)
-          .body(new LoginRequest.Builder()
-              .cookie(cookie)
-              .device_info(populateDeviceInfo())
-              .build().encode())
-          .build();
-      if (request.getResponseCode() != 200) {
-        if (request.getResponseCode() >= 401 && request.getResponseCode() < 500) {
-          // Our cookie must not be valid, we'll clear it before trying again.
-          GameSettings.i.edit()
-              .setString(GameSettings.Key.COOKIE, "")
-              .commit();
-        }
-        log.error(
-            "Error logging in, will try again: %d",
-            request.getResponseCode(),
-            request.getException());
-        disconnect();
+  /**
+   * Queue the given runnable to run once we've completed the server handshake. The running will
+   * be executed immediately if we've already get hello.
+   */
+  public void waitForHello(Runnable runnable) {
+    synchronized (lock) {
+      if (waitingForHello == null) {
+        runnable.run();
       } else {
-        LoginResponse loginResponse = checkNotNull(request.getBody(LoginResponse.class));
-        if (loginResponse.status != LoginResponse.LoginStatus.SUCCESS) {
-          updateState(ServerStateEvent.ConnectionState.ERROR, loginResponse.status);
-          log.error("Error logging in, got login status: %s", loginResponse.status);
+        waitingForHello.add(runnable);
+      }
+    }
+  }
+
+  private void login(@Nonnull String cookie) {
+    log.info("Fetching firebase instance ID...");
+    App.i.getTaskRunner().runTask(FirebaseInstanceId.getInstance().getInstanceId())
+      .then((InstanceIdResult instanceIdResult) -> {
+        log.info("Logging in: %s", ServerUrl.getUrl("/login"));
+        HttpRequest request = new HttpRequest.Builder()
+            .url(ServerUrl.getUrl("/login"))
+            .method(HttpRequest.Method.POST)
+            .body(new LoginRequest.Builder()
+                .cookie(cookie)
+                .device_info(populateDeviceInfo(instanceIdResult))
+                .build().encode())
+            .build();
+        if (request.getResponseCode() != 200) {
+          if (request.getResponseCode() >= 401 && request.getResponseCode() < 500) {
+            // Our cookie must not be valid, we'll clear it before trying again.
+            GameSettings.i.edit()
+                .setString(GameSettings.Key.COOKIE, "")
+                .commit();
+          }
+          log.error(
+              "Error logging in, will try again: %d",
+              request.getResponseCode(),
+              request.getException());
           disconnect();
         } else {
-          connectGameSocket(loginResponse);
+          LoginResponse loginResponse = checkNotNull(request.getBody(LoginResponse.class));
+          if (loginResponse.status != LoginResponse.LoginStatus.SUCCESS) {
+            updateState(ServerStateEvent.ConnectionState.ERROR, loginResponse.status);
+            log.error("Error logging in, got login status: %s", loginResponse.status);
+            disconnect();
+          } else {
+            connectGameSocket(loginResponse);
+          }
         }
-      }
-    }, Threads.BACKGROUND);
+      }, Threads.BACKGROUND);
   }
 
   private void connectGameSocket(LoginResponse loginResponse) {
@@ -147,6 +170,16 @@ public class Server {
 
       while (oldQueuedPackets != null && !oldQueuedPackets.isEmpty()) {
         send(oldQueuedPackets.remove());
+      }
+
+      ArrayList<Runnable> waitingForHello = this.waitingForHello;
+      synchronized (lock) {
+        this.waitingForHello = null;
+      }
+      if (waitingForHello != null) {
+        for (Runnable r : waitingForHello) {
+          r.run();
+        }
       }
     } catch (IOException e) {
       gameSocket = null;
@@ -237,13 +270,17 @@ public class Server {
     App.i.getEventBus().publish(currState);
   }
 
-  private static DeviceInfo populateDeviceInfo() {
+  private static DeviceInfo populateDeviceInfo(InstanceIdResult instanceIdResult) {
     return new DeviceInfo.Builder()
         .device_build(Build.ID)
         .device_id(GameSettings.i.getString(GameSettings.Key.INSTANCE_ID))
         .device_manufacturer(Build.MANUFACTURER)
         .device_model(Build.MODEL)
         .device_version(Build.VERSION.RELEASE)
+        .fcm_device_info(new FcmDeviceInfo.Builder()
+            .token(instanceIdResult.getToken())
+            .device_id(instanceIdResult.getId())
+            .build())
         .build();
   }
 }

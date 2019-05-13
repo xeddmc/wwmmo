@@ -1,10 +1,9 @@
 package au.com.codeka.warworlds.client.game.starfield;
 
 import android.content.Context;
-import android.support.v4.util.LongSparseArray;
-import android.support.v4.util.Pair;
 
-import com.google.common.base.Preconditions;
+import androidx.collection.LongSparseArray;
+import androidx.core.util.Pair;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,6 +17,8 @@ import javax.annotation.Nullable;
 
 import au.com.codeka.warworlds.client.App;
 import au.com.codeka.warworlds.client.concurrency.Threads;
+import au.com.codeka.warworlds.client.game.world.EmpireManager;
+import au.com.codeka.warworlds.client.game.world.ImageHelper;
 import au.com.codeka.warworlds.client.game.world.StarManager;
 import au.com.codeka.warworlds.client.net.ServerStateEvent;
 import au.com.codeka.warworlds.client.opengl.Camera;
@@ -28,8 +29,6 @@ import au.com.codeka.warworlds.client.opengl.Sprite;
 import au.com.codeka.warworlds.client.opengl.SpriteTemplate;
 import au.com.codeka.warworlds.client.opengl.TextSceneObject;
 import au.com.codeka.warworlds.client.util.eventbus.EventHandler;
-import au.com.codeka.warworlds.client.game.world.EmpireManager;
-import au.com.codeka.warworlds.client.game.world.ImageHelper;
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.Vector2;
 import au.com.codeka.warworlds.common.Vector3;
@@ -42,9 +41,11 @@ import au.com.codeka.warworlds.common.proto.Star;
 import au.com.codeka.warworlds.common.proto.WatchSectorsPacket;
 import au.com.codeka.warworlds.common.sim.StarHelper;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 /**
  * {@link StarfieldManager} manages the starfield view that we display in the main activity. You can
- * use it to switch between the normal view (that {@link StarfieldFragment} cares about) and the
+ * use it to switch between the normal view (that {@link StarfieldScreen} cares about) and the
  * move-fleet view, etc.
  */
 public class StarfieldManager {
@@ -86,6 +87,9 @@ public class StarfieldManager {
 
   /** A mapping of sector x,y coordinates to the list of {@link SceneObject}s for that sector. */
   private final Map<Pair<Long,Long>, ArrayList<SceneObject>> sectorSceneObjects = new HashMap<>();
+
+  /** A mapping of sector x,y coordinates to the {@link BackgroundSceneObject}s for that sector. */
+  private final Map<Pair<Long,Long>, BackgroundSceneObject> backgroundSceneObjects = new HashMap<>();
 
   /**
    * The "selection indicator" which is added to a star or fleet scene object to indicate the
@@ -136,6 +140,11 @@ public class StarfieldManager {
   /** Gets the selected star (or null if no star is selected). */
   @Nullable
   public Star getSelectedStar() {
+    if (selectedFleet != null) {
+      // If we have a fleet selected, the selectedStar will be the star for that fleet but from
+      // the user's point of view, there's no actual star selected...
+      return null;
+    }
     return selectedStar;
   }
 
@@ -164,6 +173,7 @@ public class StarfieldManager {
       selectionIndicatorSceneObject.getParent().removeChild(selectionIndicatorSceneObject);
     }
 
+    selectedFleet = null;
     selectedStar = star;
     for (TapListener tapListener : tapListeners) {
       tapListener.onStarTapped(star);
@@ -197,6 +207,7 @@ public class StarfieldManager {
       selectionIndicatorSceneObject.getParent().removeChild(selectionIndicatorSceneObject);
     }
 
+    selectedStar = star;
     selectedFleet = fleet;
     for (TapListener tapListener : tapListeners) {
       tapListener.onFleetTapped(star, fleet);
@@ -232,7 +243,7 @@ public class StarfieldManager {
     initialized = true;
 
     // Shouldn't be null after we're connected to the server.
-    Empire myEmpire = Preconditions.checkNotNull(EmpireManager.i.getMyEmpire());
+    Empire myEmpire = checkNotNull(EmpireManager.i.getMyEmpire());
     warpTo(myEmpire.home_star);
   }
 
@@ -262,10 +273,12 @@ public class StarfieldManager {
 
     // Tell the server we want to watch these new sectors, it'll send us back all the stars we
     // don't have yet.
-    App.i.getServer().send(new Packet.Builder()
-        .watch_sectors(new WatchSectorsPacket.Builder()
-            .top(top).left(left).bottom(bottom).right(right).build())
-        .build());
+    App.i.getTaskRunner().runTask(() -> {
+      App.i.getServer().send(new Packet.Builder()
+          .watch_sectors(new WatchSectorsPacket.Builder()
+              .top(top).left(left).bottom(bottom).right(right).build())
+          .build());
+    }, Threads.BACKGROUND);
 
     sectorTop = top;
     sectorLeft = left;
@@ -330,7 +343,6 @@ public class StarfieldManager {
       container = new SceneObject(scene.getDimensionResolver());
       container.setClipRadius(80.0f);
       container.setTapTargetRadius(80.0f);
-      container.setTag(new SceneObjectInfo(star));
       addSectorSceneObject(Pair.create(star.sector_x, star.sector_y), container);
 
       float x = (star.sector_x - centerSectorX) * 1024.0f + (star.offset_x - 512.0f);
@@ -341,10 +353,15 @@ public class StarfieldManager {
 
       // Temporarily remove the container, and clear out it's children. We'll re-add them all.
       synchronized (scene.lock) {
-        scene.getRootObject().removeChild(container);
+        if (container.getParent() != null) {
+          scene.getRootObject().removeChild(container);
+        }
       }
       container.removeAllChildren();
     }
+
+    // Be sure to update the container's tag with the new star info.
+    container.setTag(new SceneObjectInfo(star));
 
     Sprite sprite = createStarSprite(star);
     container.addChild(sprite);
@@ -494,30 +511,21 @@ public class StarfieldManager {
 
   /** Detach any non-moving fleets that may have been moving previously. */
   private void detachNonMovingFleets(@Nullable Star oldStar, Star star) {
-    log.debug("detachNonMovingFleets()");
-
     // Remove any fleets that are no longer moving.
     for (Fleet fleet : star.fleets) {
       if (fleet.state != Fleet.FLEET_STATE.MOVING) {
-        log.debug("%d Fleet %d (%s) is %s.", star.id, fleet.id, fleet.design_type, fleet.state);
         SceneObject sceneObject = sceneObjects.get(fleet.id);
         if (sceneObject != null) {
-          log.debug("%d ... and it has a SceneObject.", star.id);
           detachNonMovingFleet(fleet, sceneObject);
-        } else {
-          log.debug("%d ... but it doesn't have a SceneObject.", star.id);
         }
       }
     }
 
     // Make sure to also do the same for fleets that are no longer on the star.
     if (oldStar != null) {
-      log.debug("%d The oldStar is not null.", star.id);
       for (Fleet oldFleet : oldStar.fleets) {
         SceneObject sceneObject = sceneObjects.get(oldFleet.id);
         if (sceneObject == null) {
-          log.debug("%d Fleet %d (%s) doesn't have a SceneObject.",
-              star.id, oldFleet.id, oldFleet.design_type);
           // no need to see if we need to remove it if it doesn't exist...
           continue;
         }
@@ -529,14 +537,9 @@ public class StarfieldManager {
           }
         }
         if (removed) {
-          log.debug("%d The old fleet doesn't exist in the new fleet.", star.id);
           detachNonMovingFleet(oldFleet, sceneObject);
-        } else {
-          log.debug("%d The old fleet exists in the new fleet.", star.id);
         }
       }
-    } else {
-      log.debug("%d The oldStar is null.", star.id);
     }
   }
 
@@ -582,34 +585,20 @@ public class StarfieldManager {
   }
 
   private void createSectorBackground(long sectorX, long sectorY) {
-    SceneObject container = new SceneObject(scene.getDimensionResolver());
-    Sprite sprite = scene.createSprite(new SpriteTemplate.Builder()
-        .shader(scene.getSpriteShader())
-        .texture(scene.getTextureManager().loadTexture("stars/starfield.png"))
-        .build());
-    sprite.setSize(1024.0f, 1024.0f);
-    container.addChild(sprite);
+    BackgroundSceneObject backgroundSceneObject =
+        new BackgroundSceneObject(scene, sectorX, sectorY);
+    backgroundSceneObject.setZoomAmount(camera.getZoomAmount());
+    backgroundSceneObject.translate(
+        -(centerSectorX - sectorX) * 1024.0f,
+        (centerSectorY - sectorY) * 1024.0f);
 
-    Random rand = new Random(sectorX ^ sectorY * 41378L + 728247L);
-    for (int i = 0; i < 20; i++) {
-      int x = rand.nextInt(4);
-      int y = rand.nextInt(4);
-      sprite = scene.createSprite(new SpriteTemplate.Builder()
-          .shader(scene.getSpriteShader())
-          .texture(scene.getTextureManager().loadTexture("stars/gas.png"))
-          .uvTopLeft(new Vector2(0.25f * x, 0.25f * y))
-          .uvBottomRight(new Vector2(0.25f * x + 0.25f, 0.25f * y + 0.25f))
-          .build());
-      sprite.translate((rand.nextFloat() - 0.5f) * 1024.0f, (rand.nextFloat() - 0.5f) * 1024.0f);
-      float size = 300.0f + rand.nextFloat() * 200.0f;
-      sprite.setSize(size, size);
-      container.addChild(sprite);
+    Pair<Long, Long> xy = Pair.create(sectorX, sectorY);
+    addSectorSceneObject(xy, backgroundSceneObject);
+    synchronized (backgroundSceneObjects) {
+      backgroundSceneObjects.put(xy, backgroundSceneObject);
     }
-
-    container.translate(-(centerSectorX - sectorX) * 1024.0f, (centerSectorY - sectorY) * 1024.0f);
-    addSectorSceneObject(Pair.create(sectorX, sectorY), container);
     synchronized (scene.lock) {
-      scene.getRootObject().addChild(container);
+      scene.getRootObject().addChild(backgroundSceneObject);
     }
   }
 
@@ -681,6 +670,10 @@ public class StarfieldManager {
         scene.getRootObject().removeChild(obj);
       }
     }
+
+    synchronized (backgroundSceneObjects) {
+      backgroundSceneObjects.remove(sectorCoord);
+    }
   }
 
   private Vector2 getStarUvTopLeft(Star star) {
@@ -743,6 +736,26 @@ public class StarfieldManager {
       }
 
       updateStar(star);
+
+      if (selectedFleet != null && selectedStar != null && selectedStar.id.equals(star.id)) {
+        // We have a fleet selected and it's one on this star. Make sure we update the selected
+        // fleet as well.
+        boolean found = false;
+        for (Fleet fleet : star.fleets) {
+          if (fleet.id.equals(selectedFleet.id)) {
+            selectedFleet = fleet;
+            selectedStar = star;
+            found = true;
+          }
+        }
+        if (!found) {
+          // The fleet's been removed from star, it's no longer selected!
+          setSelectedFleet(null, null);
+        }
+      } else if (selectedStar != null && selectedStar.id.equals(star.id)) {
+        // The star that we have selected has been updated.
+        selectedStar = star;
+      }
     }
   };
 
@@ -761,6 +774,11 @@ public class StarfieldManager {
     @Override
     public void onScale(float factor) {
       camera.zoom(factor);
+      synchronized (backgroundSceneObjects) {
+        for (BackgroundSceneObject backgroundSceneObject : backgroundSceneObjects.values()) {
+          backgroundSceneObject.setZoomAmount(camera.getZoomAmount());
+        }
+      }
     }
 
     @Override
@@ -768,7 +786,7 @@ public class StarfieldManager {
       SceneObjectInfo selected = null;
 
       // Work out which object (if any) you tapped on.
-      synchronized (scene) {
+      synchronized (scene.lock) {
         SceneObject selectedSceneObject = null;
         float[] outVec = new float[4];
         Vector3 pos = new Vector3();

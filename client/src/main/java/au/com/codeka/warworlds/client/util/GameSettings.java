@@ -1,11 +1,10 @@
 package au.com.codeka.warworlds.client.util;
 
 import android.annotation.SuppressLint;
-import android.content.Context;
 import android.content.SharedPreferences;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v7.preference.PreferenceManager;
+
+import androidx.annotation.Nullable;
+import androidx.preference.PreferenceManager;
 
 import com.google.common.base.Preconditions;
 

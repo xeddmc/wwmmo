@@ -1,7 +1,5 @@
 package au.com.codeka.warworlds.common.sim;
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
@@ -24,6 +22,8 @@ import au.com.codeka.warworlds.common.proto.Planet;
 import au.com.codeka.warworlds.common.proto.Star;
 import au.com.codeka.warworlds.common.proto.StarModification;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 /**
  * Class for handling modifications to a star.
  */
@@ -31,6 +31,16 @@ public class StarModifier {
   private static final Log log = new Log("StarModifier");
 
   private static final long HOURS_MS = 3600000L;
+
+  private static final Simulation.LogHandler EMPTY_LOG_HANDLER = new Simulation.LogHandler() {
+    @Override
+    public void setStarName(String starName) {
+    }
+
+    @Override
+    public void log(String message) {
+    }
+  };
 
   public interface IdentifierGenerator {
     long nextIdentifier();
@@ -42,14 +52,34 @@ public class StarModifier {
     this.identifierGenerator = identifierGenerator;
   }
 
-  public void modifyStar(Star.Builder star, StarModification modification) {
+  /**
+   * Modify the given {@link Star.Builder} with the given {@link StarModification}.
+   *
+   * @param star The star to modify.
+   * @param modification The modification to apply.
+   * @throws SuspiciousModificationException when the modification seems suspicious, or isn't
+   *    otherwise allowed (e.g. you're trying to modify another empire's star, for example).
+   */
+  public void modifyStar(Star.Builder star, StarModification modification)
+      throws SuspiciousModificationException {
     modifyStar(star, null, Lists.newArrayList(modification), null);
   }
 
+  /**
+   * Modify the given {@link Star.Builder} with the given {@link StarModification}.
+   *
+   * @param star The star to modify.
+   * @param modification The modification to apply.
+   * @param logHandler A {@link Simulation.LogHandler} to write logs to. Can be null if you don't
+   *                   want to log.
+   * @throws SuspiciousModificationException when the modification seems suspicious, or isn't
+   *    otherwise allowed (e.g. you're trying to modify another empire's star, for example).
+   */
   public void modifyStar(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
+      @Nullable Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
     modifyStar(star, null, Lists.newArrayList(modification), logHandler);
   }
 
@@ -64,22 +94,17 @@ public class StarModifier {
    * @param modifications The list of {@link StarModification}s to apply.
    * @param logHandler An optional {@link Simulation.LogHandler} that we'll pass through all log
    *                   messages to.
+   * @throws SuspiciousModificationException when the modification seems suspicious, or isn't
+   *    otherwise allowed (e.g. you're trying to modify another empire's star, for example).
    */
   public void modifyStar(
       Star.Builder star,
       @Nullable Collection<Star> auxStars,
       Collection<StarModification> modifications,
-      @Nullable Simulation.LogHandler logHandler) {
+      @Nullable Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
     if (logHandler == null) {
-      logHandler = new Simulation.LogHandler() {
-        @Override
-        public void setStarName(String starName) {
-        }
-
-        @Override
-        public void log(String message) {
-        }
-      };
+      logHandler = EMPTY_LOG_HANDLER;
     }
     logHandler.log("Applying " + modifications.size() + " modifications.");
 
@@ -96,7 +121,8 @@ public class StarModifier {
       Star.Builder star,
       @Nullable Collection<Star> auxStars,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
     switch (modification.type) {
       case COLONIZE:
         applyColonize(star, modification, logHandler);
@@ -128,6 +154,9 @@ public class StarModifier {
       case EMPTY_NATIVE:
         applyEmptyNative(star, modification, logHandler);
         return;
+      case UPGRADE_BUILDING:
+        applyUpgradeBuilding(star, modification, logHandler);
+        return;
       default:
         logHandler.log("Unknown or unexpected modification type: " + modification.type);
         log.error("Unknown or unexpected modification type: %s", modification.type);
@@ -138,8 +167,7 @@ public class StarModifier {
       Star.Builder star,
       StarModification modification,
       Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.COLONIZE));
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.COLONIZE));
     logHandler.log(String.format(Locale.US, "- colonizing planet #%d", modification.planet_index));
 
     // Destroy a colony ship, unless this is a native colony.
@@ -154,8 +182,14 @@ public class StarModifier {
           if (Math.ceil(fleet.num_ships) == 1.0f) {
             star.fleets.remove(i);
           } else {
+            // Make sure we don't have too much fuel.
+            Design design = DesignHelper.getDesign(fleet.design_type);
+            float maxFuelAmount = design.fuel_size * (fleet.num_ships - 1);
+            float fuelAmount = Math.max(fleet.fuel_amount, maxFuelAmount);
+
             star.fleets.set(i, fleet.newBuilder()
                 .num_ships(fleet.num_ships - 1)
+                .fuel_amount(fuelAmount)
                 .build());
           }
           found = true;
@@ -210,8 +244,7 @@ public class StarModifier {
       Star.Builder star,
       StarModification modification,
       Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.CREATE_FLEET));
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.CREATE_FLEET));
 
     boolean attack = false;
     if (modification.fleet == null || modification.fleet.stance == Fleet.FLEET_STANCE.AGGRESSIVE) {
@@ -236,6 +269,27 @@ public class StarModifier {
         numAttacking++;
       }
     }
+    float fuelAmount = 0.0f;
+    Design design =
+        DesignHelper.getDesign(
+            modification.fleet == null
+                ? modification.design_type
+                : modification.fleet.design_type);
+    float numShips = modification.fleet == null ? modification.count : modification.fleet.num_ships;
+    if (modification.full_fuel != null && modification.full_fuel) {
+      fuelAmount = design.fuel_size * numShips;
+    } else {
+      fuelAmount = design.fuel_size * numShips;
+      if (modification.fleet != null) {
+        fuelAmount -= modification.fleet.fuel_amount;
+      }
+
+      int storageIndex = StarHelper.getStorageIndex(star, modification.empire_id);
+      EmpireStorage.Builder empireStorage = star.empire_stores.get(storageIndex).newBuilder();
+      fuelAmount = Math.min(fuelAmount, empireStorage.total_energy);
+      empireStorage.total_energy(empireStorage.total_energy - fuelAmount);
+      star.empire_stores.set(storageIndex, empireStorage.build());
+    }
 
     // Now add the fleet itself.
     logHandler.log(String.format(Locale.US, "- creating fleet (%s) numAttacking=%d",
@@ -246,7 +300,9 @@ public class StarModifier {
           .id(identifierGenerator.nextIdentifier())
           .state(attack ? Fleet.FLEET_STATE.ATTACKING : Fleet.FLEET_STATE.IDLE)
           .state_start_time(System.currentTimeMillis())
+          .fuel_amount(fuelAmount)
           .destination_star_id(null)
+          .eta(null)
           .build());
     } else {
       star.fleets.add(new Fleet.Builder()
@@ -255,6 +311,7 @@ public class StarModifier {
           .empire_id(modification.empire_id)
           .id(identifierGenerator.nextIdentifier())
           .num_ships((float) modification.count)
+          .fuel_amount(fuelAmount)
           .stance(Fleet.FLEET_STANCE.AGGRESSIVE)
           .state(attack ? Fleet.FLEET_STATE.ATTACKING : Fleet.FLEET_STATE.IDLE)
           .state_start_time(System.currentTimeMillis())
@@ -265,16 +322,25 @@ public class StarModifier {
   private void applyCreateBuilding(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.CREATE_BUILDING));
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.CREATE_BUILDING));
 
     Planet planet = getPlanetWithColony(star, modification.colony_id);
     if (planet != null) {
+      if (!EmpireHelper.isSameEmpire(planet.colony.empire_id, modification.empire_id)) {
+        throw new SuspiciousModificationException(
+            star.id,
+            modification,
+            "Attempt to create building on planet for different empire. colony.empire_id=%d",
+            planet.colony.empire_id);
+      }
+
       logHandler.log(
           String.format(Locale.US, "- creating building, colony_id=%d", modification.colony_id));
       Colony.Builder colony = planet.colony.newBuilder();
       colony.buildings.add(new Building.Builder()
+          .id(identifierGenerator.nextIdentifier())
           .design_type(modification.design_type)
           .level(1)
           .build());
@@ -282,19 +348,30 @@ public class StarModifier {
           .colony(colony.build())
           .build());
     } else {
-      // TODO: suspicious!
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to create building on colony that does not exist. colony_id=%d",
+          modification.colony_id);
     }
   }
 
   private void applyAdjustFocus(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.ADJUST_FOCUS));
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.ADJUST_FOCUS));
 
     Planet planet = getPlanetWithColony(star, modification.colony_id);
     if (planet != null) {
+      if (!EmpireHelper.isSameEmpire(planet.colony.empire_id, modification.empire_id)) {
+        throw new SuspiciousModificationException(
+            star.id,
+            modification,
+            "Attempt to adjust focus on planet for different empire. colony.empire_id=%d",
+            planet.colony.empire_id);
+      }
       logHandler.log("- adjusting focus.");
       star.planets.set(planet.index, planet.newBuilder()
           .colony(planet.colony.newBuilder()
@@ -302,42 +379,107 @@ public class StarModifier {
               .build())
           .build());
     } else {
-      // TODO: suspicious!
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to adjust focus on a colony that does not exist. colony_id=%d",
+          modification.colony_id);
     }
   }
 
   private void applyAddBuildRequest(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.ADD_BUILD_REQUEST));
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.ADD_BUILD_REQUEST));
 
     Planet planet = getPlanetWithColony(star, modification.colony_id);
     if (planet != null) {
-      logHandler.log("- adding build request");
       Colony.Builder colonyBuilder = planet.colony.newBuilder();
+      if (!EmpireHelper.isSameEmpire(colonyBuilder.empire_id, modification.empire_id)) {
+        throw new SuspiciousModificationException(
+            star.id,
+            modification,
+            "Attempt to add build request on colony that does belong to you. colony_id=%d empire_id=%d",
+            modification.colony_id,
+            colonyBuilder.empire_id);
+      }
+
+      // If the build request is for a ship and this colony doesn't have a shipyard, you can't
+      // build. That's suspicious.
+      Design design = DesignHelper.getDesign(modification.design_type);
+      if (design.design_kind == Design.DesignKind.SHIP) {
+        boolean hasShipyard = false;
+        for (Building building : colonyBuilder.buildings) {
+          if (building.design_type == Design.DesignType.SHIPYARD) {
+            hasShipyard = true;
+          }
+        }
+        if (!hasShipyard) {
+          throw new SuspiciousModificationException(
+              star.id,
+              modification,
+              "Attempt to build ship with no shipyard present.");
+        }
+      }
+
+      // If this is not a building, then building_id must be null.
+      if (design.design_kind != Design.DesignKind.BUILDING && modification.building_id != null) {
+        throw new SuspiciousModificationException(
+            star.id,
+            modification,
+            "Cannot upgrade something that is not a building.");
+      }
+
+      // If the build request has a building_id, then that building should be on this colony.
+      if (modification.building_id != null) {
+        boolean found = false;
+        for (Building bldg : colonyBuilder.buildings) {
+          if (Objects.equals(bldg.id, modification.building_id)) {
+            found = true;
+          }
+        }
+        if (!found) {
+          throw new SuspiciousModificationException(
+              star.id,
+              modification,
+              "Cannot upgrade a building that doesn't exist: #%d", modification.building_id);
+        }
+      }
+
+      int count = 1;
+      if (design.design_kind == Design.DesignKind.SHIP) {
+        count = modification.count;
+      }
+
+      logHandler.log("- adding build request");
       colonyBuilder.build_requests.add(new BuildRequest.Builder()
           .id(identifierGenerator.nextIdentifier())
           .design_type(modification.design_type)
+          .building_id(modification.building_id)
           .start_time(System.currentTimeMillis())
-          .count(modification.count)
+          .count(count)
           .progress(0.0f)
           .build());
       star.planets.set(planet.index, planet.newBuilder()
           .colony(colonyBuilder.build())
           .build());
     } else {
-      // TODO: suspicious!
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to add build request on colony that does not exist. colony_id=%d",
+          modification.colony_id);
     }
   }
 
   private void applyDeleteBuildRequest(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.DELETE_BUILD_REQUEST));
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.DELETE_BUILD_REQUEST));
 
     Planet planet = null;
     BuildRequest buildRequest = null;
@@ -345,10 +487,12 @@ public class StarModifier {
       if (p.colony != null) {
         for (BuildRequest br : p.colony.build_requests) {
           if (br.id.equals(modification.build_request_id)) {
-            if (!p.colony.empire_id.equals(modification.empire_id)) {
-              // TODO: suspicious!
-              logHandler.log("! trying to delete wrong empire's build request!");
-              return;
+            if (!EmpireHelper.isSameEmpire(p.colony.empire_id, modification.empire_id)) {
+              throw new SuspiciousModificationException(
+                  star.id,
+                  modification,
+                  "Attempt to delete build request for different empire. building.empire_id=%d",
+                  p.colony.empire_id);
             }
             planet = p;
             buildRequest = br;
@@ -362,9 +506,11 @@ public class StarModifier {
     }
 
     if (planet == null) {
-      // TODO: suspicious? (maybe complete)
-      logHandler.log("Couldn't find build request with ID " + modification.build_request_id);
-      return;
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to delete build request that does not exist. build_request_id=%d",
+          modification.build_request_id);
     }
     final long idToDelete = buildRequest.id;
 
@@ -372,12 +518,7 @@ public class StarModifier {
     Colony.Builder colonyBuilder = planet.colony.newBuilder();
     colonyBuilder.build_requests(
         Lists.newArrayList(
-            Iterables.filter(planet.colony.build_requests, new Predicate<BuildRequest>() {
-              @Override
-              public boolean apply(@Nullable BuildRequest br) {
-                return !br.id.equals(idToDelete);
-              }
-            })));
+            Iterables.filter(planet.colony.build_requests, br -> !br.id.equals(idToDelete))));
     star.planets.set(planet.index, planet.newBuilder()
         .colony(colonyBuilder.build())
         .build());
@@ -386,17 +527,30 @@ public class StarModifier {
   private void applySplitFleet(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
-        modification.type.equals(StarModification.MODIFICATION_TYPE.SPLIT_FLEET));
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(modification.type.equals(StarModification.MODIFICATION_TYPE.SPLIT_FLEET));
 
     int fleetIndex = findFleetIndex(star, modification.fleet_id);
     if (fleetIndex >= 0) {
+      Fleet.Builder fleet = star.fleets.get(fleetIndex).newBuilder();
+      if (!EmpireHelper.isSameEmpire(fleet.empire_id, modification.empire_id)) {
+        throw new SuspiciousModificationException(
+            star.id,
+            modification,
+            "Attempt to split fleet of different empire. fleet.empire_id=%d",
+            fleet.empire_id);
+      }
+
+      Design design = DesignHelper.getDesign(fleet.design_type);
+      float fuelFraction= fleet.fuel_amount / (design.fuel_size * fleet.num_ships);
+
       logHandler.log("- splitting fleet");
       // Modify the existing fleet to change it's number of ships
-      Fleet.Builder fleet = star.fleets.get(fleetIndex).newBuilder();
+      float existingFleetNumShips = fleet.num_ships - modification.count;
       star.fleets.set(fleetIndex, fleet
-          .num_ships(fleet.num_ships - modification.count)
+          .num_ships(existingFleetNumShips)
+          .fuel_amount(fuelFraction * (design.fuel_size * existingFleetNumShips))
           .build());
 
       // Add a new fleet, that's a copy of the existing fleet, but with the new number of ships.
@@ -404,25 +558,40 @@ public class StarModifier {
       star.fleets.add(fleet
           .id(identifierGenerator.nextIdentifier())
           .num_ships((float) modification.count)
+          .fuel_amount(fuelFraction * (design.fuel_size * modification.count))
           .build());
     } else {
-      // TODO: suspicious!
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to split fleet that does not exist. fleet_id=%d",
+          modification.fleet_id);
     }
   }
 
   private void applyMergeFleet(
       Star.Builder star,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(
         modification.type.equals(StarModification.MODIFICATION_TYPE.MERGE_FLEET));
 
     int fleetIndex = findFleetIndex(star, modification.fleet_id);
     if (fleetIndex >= 0) {
       Fleet.Builder fleet = star.fleets.get(fleetIndex).newBuilder();
       if (fleet.state != Fleet.FLEET_STATE.IDLE) {
+        // Can't merge, but this isn't particularly suspicious.
         logHandler.log(String.format(Locale.US,
             "  main fleet %d is %s, cannot merge.", fleet.id, fleet.state));
+      }
+
+      if (!EmpireHelper.isSameEmpire(fleet.empire_id, modification.empire_id)) {
+        throw new SuspiciousModificationException(
+            star.id,
+            modification,
+            "Attempt to merge fleet owned by a different empire. fleet.empire_id=%d",
+            fleet.empire_id);
       }
 
       for (int i = 0; i < star.fleets.size(); i++) {
@@ -432,15 +601,25 @@ public class StarModifier {
         }
         if (modification.additional_fleet_ids.contains(thisFleet.id)) {
           if (!thisFleet.design_type.equals(fleet.design_type)) {
-            // TODO: suspicious! wrong fleet type.
-            logHandler.log(String.format(Locale.US,
-                "  fleet #%d not the same design_type as #%d (%s vs. %s)",
-                thisFleet.id, fleet.id, thisFleet.design_type, fleet.design_type));
-            return;
+            // The client shouldn't allow you to select a fleet of a different type. This would be
+            // suspicious.
+            throw new SuspiciousModificationException(
+                star.id,
+                modification,
+                "Fleet #%d not the same design_type as #%d (%s vs. %s)",
+                thisFleet.id, fleet.id, thisFleet.design_type, fleet.design_type);
+          }
+
+          if (!EmpireHelper.isSameEmpire(thisFleet.empire_id, modification.empire_id)) {
+            throw new SuspiciousModificationException(
+                star.id,
+                modification,
+                "Attempt to merge fleet owned by a different empire. fleet.empire_id=%d",
+                thisFleet.empire_id);
           }
 
           if (thisFleet.state != Fleet.FLEET_STATE.IDLE) {
-            // Suspicious? nah, just skip it.
+            // Again, not particularly suspicious, we'll just skip it.
             logHandler.log(String.format(Locale.US,
                 "  fleet %d is %s, cannot merge.", thisFleet.id, thisFleet.state));
             continue;
@@ -449,6 +628,7 @@ public class StarModifier {
           // TODO: make sure it has the same upgrades, otherwise we have to remove it.
 
           fleet.num_ships(fleet.num_ships + thisFleet.num_ships);
+          fleet.fuel_amount(fleet.fuel_amount + thisFleet.fuel_amount);
           logHandler.log(String.format(Locale.US,
               "  removing fleet %d (num_ships=%.2f)", thisFleet.id, thisFleet.num_ships));
 
@@ -470,8 +650,9 @@ public class StarModifier {
       Star.Builder star,
       Collection<Star> auxStars,
       StarModification modification,
-      Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException{
+    checkArgument(
         modification.type.equals(StarModification.MODIFICATION_TYPE.MOVE_FLEET));
     logHandler.log("- moving fleet");
 
@@ -491,14 +672,24 @@ public class StarModifier {
 
     int fleetIndex = findFleetIndex(star, modification.fleet_id);
     if (fleetIndex < 0) {
-      // TODO: suspicious!
-      logHandler.log("  no fleet with given ID on star.");
-      return;
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to move fleet that does not exist. fleet_id=%d",
+          modification.fleet_id);
     }
     Fleet fleet = star.fleets.get(fleetIndex);
 
+    if (!fleet.empire_id.equals(modification.empire_id)) {
+      throw new SuspiciousModificationException(
+          star.id,
+          modification,
+          "Attempt to move fleet owned by a different empire. fleet.empire_id=%d",
+          fleet.empire_id);
+    }
+
     if (fleet.state != Fleet.FLEET_STATE.IDLE) {
-      // TODO: suspicious?
+      // Not suspicious, maybe you accidentally pressed twice.
       logHandler.log("  fleet is not idle, can't move.");
       return;
     }
@@ -508,27 +699,22 @@ public class StarModifier {
     double timeInHours = distance / design.speed_px_per_hour;
     double fuel = design.fuel_cost_per_px * distance * fleet.num_ships;
 
-    int storageIndex = StarHelper.getStorageIndex(star, fleet.empire_id);
-    if (storageIndex < 0) {
-      // No storage. TODO: some kind of portable fuel?
-      logHandler.log("  no storages on this star.");
-      return;
-    }
-
-    EmpireStorage.Builder empireStorageBuilder = star.empire_stores.get(storageIndex).newBuilder();
-    if (empireStorageBuilder.total_energy < fuel) {
-      logHandler.log(String.format(Locale.US,
-          "  not enough energy for move (%.2f < %.2f)", empireStorageBuilder.total_energy, fuel));
+    if (fleet.fuel_amount < fuel) {
+      // Not enough fuel. We won't count it as suspicious, maybe a race condition.
+      logHandler.log(
+          String.format(
+              Locale.US,
+              "  not enough fuel in the fleet (needed %.2f, have %.2f",
+              fuel, fleet.fuel_amount));
       return;
     }
 
     logHandler.log(String.format(Locale.US, "  cost=%.2f", fuel));
-    star.empire_stores.set(storageIndex, empireStorageBuilder
-        .total_energy(empireStorageBuilder.total_energy - (float) fuel)
-        .build());
+
     star.fleets.set(fleetIndex, star.fleets.get(fleetIndex).newBuilder()
         .destination_star_id(targetStar.id)
         .state(Fleet.FLEET_STATE.MOVING)
+        .fuel_amount(fleet.fuel_amount - (float) fuel)
         .state_start_time(System.currentTimeMillis())
         .eta(System.currentTimeMillis() + (long)(timeInHours * HOURS_MS))
         .build());
@@ -538,7 +724,7 @@ public class StarModifier {
       Star.Builder star,
       StarModification modification,
       Simulation.LogHandler logHandler) {
-    Preconditions.checkArgument(
+    checkArgument(
         modification.type.equals(StarModification.MODIFICATION_TYPE.EMPTY_NATIVE));
     logHandler.log("- emptying native colonies");
 
@@ -562,6 +748,48 @@ public class StarModifier {
       if (star.fleets.get(i).empire_id == null) {
         star.fleets.remove(i);
         i--;
+      }
+    }
+  }
+
+  private void applyUpgradeBuilding(
+      Star.Builder star,
+      StarModification modification,
+      Simulation.LogHandler logHandler)
+      throws SuspiciousModificationException {
+    checkArgument(
+        modification.type.equals(StarModification.MODIFICATION_TYPE.UPGRADE_BUILDING));
+    logHandler.log("- upgrading building");
+    for (int i = 0; i < star.planets.size(); i++) {
+      if (star.planets.get(i).colony != null
+          && star.planets.get(i).colony.id.equals(modification.colony_id)) {
+        Colony.Builder colony = star.planets.get(i).colony.newBuilder();
+        if (!colony.empire_id.equals(modification.empire_id)) {
+          throw new SuspiciousModificationException(
+              star.id,
+              modification,
+              "trying to upgrade building belonging to different empire (%d)", colony.empire_id);
+        }
+
+        boolean found = false;
+        for (int j = 0; j < colony.buildings.size(); j++) {
+          if (colony.buildings.get(j).id.equals(modification.building_id)) {
+            found = true;
+            Building.Builder building = colony.buildings.get(j).newBuilder();
+            // TODO: check if it's at max level?
+            building.level(building.level + 1);
+            colony.buildings.set(j, building.build());
+          }
+        }
+
+        if (!found) {
+          throw new SuspiciousModificationException(
+              star.id,
+              modification,
+              "trying to upgrade building that doesn't exist (%d)", modification.building_id);
+        }
+
+        star.planets.set(i, star.planets.get(i).newBuilder().colony(colony.build()).build());
       }
     }
   }

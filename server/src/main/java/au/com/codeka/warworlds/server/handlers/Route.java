@@ -8,7 +8,6 @@ import java.util.regex.Pattern;
 
 import javax.annotation.Nonnull;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 public class Route {
   private Pattern pattern;

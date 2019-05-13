@@ -1,5 +1,10 @@
 package au.com.codeka.warworlds.server.admin.handlers;
 
+import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
+import com.google.gson.Gson;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -11,37 +16,46 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 
-import au.com.codeka.carrot.CarrotEngine;
-import au.com.codeka.carrot.CarrotException;
-import au.com.codeka.carrot.resource.FileResourceLocater;
-import au.com.codeka.warworlds.common.Log;
-import au.com.codeka.warworlds.common.proto.AdminRole;
-import au.com.codeka.warworlds.server.handlers.RequestException;
-import au.com.codeka.warworlds.server.handlers.RequestHandler;
-import au.com.codeka.warworlds.server.admin.Session;
-import au.com.codeka.warworlds.server.store.DataStore;
-
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-
 import javax.annotation.Nullable;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import au.com.codeka.carrot.CarrotEngine;
+import au.com.codeka.carrot.CarrotException;
+import au.com.codeka.carrot.Configuration;
+import au.com.codeka.carrot.bindings.MapBindings;
+import au.com.codeka.carrot.resource.FileResourceLocator;
+import au.com.codeka.warworlds.common.Log;
+import au.com.codeka.warworlds.common.proto.AdminRole;
+import au.com.codeka.warworlds.server.admin.Session;
+import au.com.codeka.warworlds.server.handlers.RequestException;
+import au.com.codeka.warworlds.server.handlers.RequestHandler;
+import au.com.codeka.warworlds.server.store.DataStore;
+
 public class AdminHandler extends RequestHandler {
-  private final Log log = new Log("AdminHandler");
+  private static final Log log = new Log("AdminHandler");
 
-  private static final CarrotEngine CARROT_ENGINE = new CarrotEngine();
-  static {
-    CARROT_ENGINE.getConfig().setResourceLocater(
-        new FileResourceLocater(
-            CARROT_ENGINE.getConfig(),
-            new File("data/admin/tmpl").getAbsolutePath()));
-    CARROT_ENGINE.getConfig().setEncoding("utf-8");
-
-    CARROT_ENGINE.getGlobalBindings().put("Session", new SessionHelper());
-  }
+  private static final CarrotEngine CARROT = new CarrotEngine(
+      new Configuration.Builder()
+          .setResourceLocator(
+              new FileResourceLocator.Builder(new File("data/admin/tmpl").getAbsolutePath()))
+          .setLogger((level, msg) -> {
+            msg = msg.replace("%", "%%");
+            if (level == Configuration.Logger.LEVEL_DEBUG) {
+              log.debug("CARROT: %s", msg);
+            } else if (level == Configuration.Logger.LEVEL_INFO) {
+              log.info("CARROT: %s", msg);
+            } else if (level == Configuration.Logger.LEVEL_WARNING) {
+              log.warning("CARROT: %s", msg);
+            } else {
+              log.error("(level: %d): CARROT: %s", level, msg);
+            }
+          })
+          .build(),
+      new MapBindings.Builder()
+          .set("Session", new SessionHelper())
+          .set("String", new StringHelper())
+          .set("Gson", new GsonHelper()));
 
   private Session session;
 
@@ -120,7 +134,7 @@ public class AdminHandler extends RequestHandler {
     getResponse().setContentType("text/html");
     getResponse().setHeader("Content-Type", "text/html; charset=utf-8");
     try {
-      getResponse().getWriter().write(CARROT_ENGINE.process(path, data));
+      getResponse().getWriter().write(CARROT.process(path, new MapBindings(data)));
     } catch (CarrotException | IOException e) {
       log.error("Error rendering template!", e);
       throw new RequestException(e);
@@ -138,7 +152,7 @@ public class AdminHandler extends RequestHandler {
   }
 
   protected void authenticate() {
-    URI requestUrl = null;
+    URI requestUrl;
     try {
       requestUrl = new URI(getRequestUrl());
     } catch (URISyntaxException e) {
@@ -155,7 +169,6 @@ public class AdminHandler extends RequestHandler {
 
     redirect(redirectUrl);
   }
-
 
   protected Session getSession() throws RequestException {
     if (session == null) {
@@ -186,6 +199,23 @@ public class AdminHandler extends RequestHandler {
     public boolean isInRole(Session session, String roleName) throws CarrotException {
       AdminRole role = AdminRole.valueOf(roleName);
       return session.isInRole(role);
+    }
+  }
+
+  private static class StringHelper {
+    @SuppressWarnings("unused") // Used by template engine.
+    public String trunc(String s, int maxLength) {
+      if (s.length() > maxLength - 3) {
+        return s.substring(0, maxLength - 3) + "...";
+      }
+      return s;
+    }
+  }
+
+  private static class GsonHelper {
+    @SuppressWarnings("unused") // Used by template engine.
+    public String encode(Object obj) {
+      return new Gson().toJson(obj);
     }
   }
 }

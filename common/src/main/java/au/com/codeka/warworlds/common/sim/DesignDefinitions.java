@@ -31,6 +31,7 @@ public class DesignDefinitions {
           .effect(Lists.newArrayList(
               new Design.Effect.Builder().type(Design.EffectType.FIGHTER_SHIP).build()))
           .fuel_cost_per_px(3.5f)
+          .fuel_size(700)
           .image_url("colony.png")
           .speed_px_per_hour(128.0f)
           .upgrades(Lists.newArrayList(
@@ -77,7 +78,8 @@ public class DesignDefinitions {
           .effect(Lists.newArrayList(
               new Design.Effect.Builder().type(Design.EffectType.SCOUT_SHIP).build(),
               new Design.Effect.Builder().type(Design.EffectType.FIGHTER_SHIP).build()))
-          .fuel_cost_per_px(0.2f)
+          .fuel_cost_per_px(0.02f)
+          .fuel_size(100)
           .image_url("scout.png")
           .speed_px_per_hour(4096.0f)
           .upgrades(Lists.newArrayList(
@@ -123,6 +125,7 @@ public class DesignDefinitions {
           .effect(Lists.newArrayList(
               new Design.Effect.Builder().type(Design.EffectType.FIGHTER_SHIP).build()))
           .fuel_cost_per_px(0.005f)
+          .fuel_size(2)
           .image_url("fighter.png")
           .speed_px_per_hour(768.0f)
           .upgrades(Lists.newArrayList(
@@ -166,6 +169,7 @@ public class DesignDefinitions {
           .effect(Lists.newArrayList(
               new Design.Effect.Builder().type(Design.EffectType.FIGHTER_SHIP).build()))
           .fuel_cost_per_px(0.005f)
+          .fuel_size(2)
           .image_url("troopcarrier.png")
           .speed_px_per_hour(600.0f)
           .build(),
@@ -193,6 +197,7 @@ public class DesignDefinitions {
               new Design.Effect.Builder().type(Design.EffectType.EMPTY_SPACE_MOVER).build(),
               new Design.Effect.Builder().type(Design.EffectType.FIGHTER_SHIP).build()))
           .fuel_cost_per_px(51.2f)
+          .fuel_size(450)
           .image_url("wormhole-generator.png")
           .speed_px_per_hour(128.0f)
           .build(),
@@ -334,6 +339,7 @@ public class DesignDefinitions {
                       .build())
                   .build()
           ))
+          .show_in_solar_system(false)
           .max_per_colony(1)
           .build(),
 
@@ -490,6 +496,7 @@ public class DesignDefinitions {
                   ))
                   .build()
           ))
+          .show_in_solar_system(false)
           .build(),
 
       new Design.Builder()
@@ -508,6 +515,7 @@ public class DesignDefinitions {
               .build())
           .image_url("hq.png")
           .max_per_empire(1)
+          .show_in_solar_system(true)
           .build(),
 
       new Design.Builder()
@@ -594,6 +602,7 @@ public class DesignDefinitions {
                           .build()))
                   .build()
           ))
+          .show_in_solar_system(true)
           .build(),
 
       new Design.Builder()
@@ -693,6 +702,7 @@ public class DesignDefinitions {
                           .build()))
                   .build()
           ))
+          .show_in_solar_system(true)
           .build()
   )).build();
 }

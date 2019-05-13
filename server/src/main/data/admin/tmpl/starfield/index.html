@@ -1,6 +1,7 @@
 {% extends "skeleton.html" %}
 {% block "title" %}Starfield{% end %}
 {% block "head" %}
+  <link rel="stylesheet" href="/admin/css/star.css">
   <link rel="stylesheet" href="/admin/css/starfield.css">
   <script type="text/javascript" src="/admin/js/tmpl.js"></script>
   <script type="text/javascript" src="/admin/js/empirestore.js"></script>
@@ -30,7 +31,7 @@
   <div class="right-column">
     <div id="star-details"></div>
     <script id="star-details-tmpl" type="text/html">
-      <div class="star-big star-big-<%= classification.toLowerCase() %>"></div>
+      <div class="star-big star-<%= classification.toLowerCase() %>"></div>
       <h1><%= name %></h1>
       <div class="details"><%= id %> [<%= sector_x %>,<%= sector_y %>] (<%= offset_x %>,<%= offset_y %>)</div>
       <div class="stores">
@@ -139,6 +140,7 @@
               <img data-empireid="<%= fleets[i].empire_id %>" width="16" height="16" />
               <b><span data-empireid="<%= fleets[i].empire_id %>">...</span></b>
               <%= design.display_name %> x <%= fleets[i].num_ships %>
+              Fuel: <%= fleets[i].fuel_amount %> / <%= design.fuel_size * fleets[i].num_ships %>
             </div>
             <div>
               <%= fleets[i].state %> <% if (fleets[i].state == "MOVING") { %>
@@ -156,6 +158,7 @@
         <a href="javascript:modify(<%= id %>);">Modify</a> &bull;
         <a href="javascript:refreshSector();">Refresh</a> &bull;
         <a href="javascript:clearNatives(<%= id %>);">Clear natives</a> &bull;
+        <a href="javascript:showRaw(<%= id %>);">Show raw</a> &bull;
         <a href="javascript:deleteStar(<%= id %>);">Delete</a>
         <div id="simulate-result"></div>
       </div>

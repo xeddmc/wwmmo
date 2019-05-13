@@ -7,7 +7,6 @@ import java.sql.SQLException;
 
 import javax.sql.PooledConnection;
 
-
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**

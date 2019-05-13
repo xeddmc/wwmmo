@@ -4,7 +4,6 @@ import com.google.common.base.Strings;
 
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.proto.Account;
-import au.com.codeka.warworlds.common.proto.AccountAssociateResponse;
 import au.com.codeka.warworlds.server.handlers.RequestException;
 import au.com.codeka.warworlds.server.html.HtmlRequestHandler;
 import au.com.codeka.warworlds.server.store.DataStore;

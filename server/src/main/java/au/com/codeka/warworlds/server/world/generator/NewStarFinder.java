@@ -13,8 +13,6 @@ import au.com.codeka.warworlds.server.store.SectorsStore;
 import au.com.codeka.warworlds.server.world.SectorManager;
 import au.com.codeka.warworlds.server.world.WatchableObject;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 /**
  * Find a star which is suitable for a new empire.
  *

@@ -1,6 +1,5 @@
 package au.com.codeka.warworlds.server.store.base;
 
-
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;

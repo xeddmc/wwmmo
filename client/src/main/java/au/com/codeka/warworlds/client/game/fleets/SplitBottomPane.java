@@ -50,10 +50,10 @@ public class SplitBottomPane extends RelativeLayout {
 
     inflate(context, R.layout.ctrl_fleet_split_bottom_pane, this);
 
-    fleetDetails = (ViewGroup) findViewById(R.id.fleet);
-    splitLeft = (EditText) findViewById(R.id.split_left);
-    splitRight = (EditText) findViewById(R.id.split_right);
-    splitRatio = (SeekBar) findViewById(R.id.split_ratio);
+    fleetDetails = findViewById(R.id.fleet);
+    splitLeft = findViewById(R.id.split_left);
+    splitRight = findViewById(R.id.split_right);
+    splitRatio = findViewById(R.id.split_ratio);
 
     findViewById(R.id.split_btn).setOnClickListener(this::onSplitClick);
     findViewById(R.id.cancel_btn).setOnClickListener(this::onCancelClick);
@@ -117,8 +117,7 @@ public class SplitBottomPane extends RelativeLayout {
     StarManager.i.updateStar(star, new StarModification.Builder()
         .type(StarModification.MODIFICATION_TYPE.SPLIT_FLEET)
         .fleet_id(fleet.id)
-        .count(splitRatio.getMax() - splitRatio.getProgress())
-        .build());
+        .count(splitRatio.getMax() - splitRatio.getProgress()));
 
     callback.onCancel();
   }

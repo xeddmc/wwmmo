@@ -32,9 +32,6 @@ import au.com.codeka.warworlds.common.sim.StarHelper;
  */
 public class StarSelectedBottomPane extends FrameLayout {
   public interface Callback {
-    void onEmpireClicked(View view);
-    void onSitrepClicked(View view);
-    void onAllianceClicked(View view);
     void onStarClicked(Star star, @Nullable Planet planet);
     void onFleetClicked(Star star, Fleet fleet);
   }
@@ -52,18 +49,15 @@ public class StarSelectedBottomPane extends FrameLayout {
     super(context, null);
 
     inflate(context, R.layout.starfield_bottom_pane_star, this);
-    findViewById(R.id.empire_btn).setOnClickListener(callback::onEmpireClicked);
-    findViewById(R.id.sitrep_btn).setOnClickListener(callback::onSitrepClicked);
-    findViewById(R.id.alliance_btn).setOnClickListener(callback::onAllianceClicked);
     findViewById(R.id.view_btn).setOnClickListener((v) -> callback.onStarClicked(this.star, null));
 
     this.star = star;
-    planetList = (PlanetListSimple) findViewById(R.id.planet_list);
-    fleetList = (FleetListSimple) findViewById(R.id.fleet_list);
-    starName = (TextView) findViewById(R.id.star_name);
-    starKind = (TextView) findViewById(R.id.star_kind);
-    starIcon = (ImageView) findViewById(R.id.star_icon);
-    renameButton = (Button) findViewById(R.id.rename_btn);
+    planetList = findViewById(R.id.planet_list);
+    fleetList = findViewById(R.id.fleet_list);
+    starName = findViewById(R.id.star_name);
+    starKind = findViewById(R.id.star_kind);
+    starIcon = findViewById(R.id.star_icon);
+    renameButton = findViewById(R.id.rename_btn);
 
     planetList.setPlanetSelectedHandler(planet -> callback.onStarClicked(this.star, planet));
 
@@ -131,7 +125,7 @@ public class StarSelectedBottomPane extends FrameLayout {
     starName.setText(star.name);
     starKind.setText(String.format(Locale.ENGLISH, "%s %s", star.classification,
         StarHelper.getCoordinateString(star)));
-    Picasso.with(getContext())
+    Picasso.get()
         .load(ImageHelper.getStarImageUrl(getContext(), star, 40, 40))
         .into(starIcon);
   }

@@ -3,17 +3,16 @@ package au.com.codeka.warworlds.client.opengl;
 import android.content.Context;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
-import android.opengl.Matrix;
-import android.os.Looper;
-import android.support.annotation.Nullable;
 import android.util.AttributeSet;
+
+import androidx.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
-import au.com.codeka.warworlds.client.concurrency.TaskQueue;
+import au.com.codeka.warworlds.client.concurrency.RunnableQueue;
 import au.com.codeka.warworlds.client.concurrency.Threads;
 import au.com.codeka.warworlds.common.Log;
 
@@ -74,13 +73,13 @@ public class RenderSurfaceView extends GLSurfaceView {
     private final TextureManager textureManager;
     private final Camera camera;
     @Nullable private Scene scene;
-    private TaskQueue taskQueue;
+    private RunnableQueue runnableQueue;
     private FrameCounter frameCounter;
 
     public Renderer(Context context) {
       this.multiSampling = true;
       this.textureManager = new TextureManager(context);
-      this.taskQueue = new TaskQueue(50 /* numQueuedItems */);
+      this.runnableQueue = new RunnableQueue(50 /* numQueuedItems */);
       this.dimensionResolver = new DimensionResolver(context);
       this.camera = new Camera();
       this.frameCounter = new FrameCounter();
@@ -114,11 +113,11 @@ public class RenderSurfaceView extends GLSurfaceView {
 
     @Override
     public void onDrawFrame(final GL10 ignored) {
-      Threads.GL.setThread(Thread.currentThread(), taskQueue);
+      Threads.GL.setThread(Thread.currentThread(), runnableQueue);
       frameCounter.onFrame();
 
       // Empty the task queue
-      taskQueue.runAllTasks();
+      runnableQueue.runAllTasks();
       camera.onDraw();
 
       GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);

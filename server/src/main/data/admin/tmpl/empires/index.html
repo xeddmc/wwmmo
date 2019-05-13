@@ -1,5 +1,5 @@
 {% extends "skeleton.html" %}
-{% block "title" %}Accounts{% end %}
+{% block "title" %}Empires{% end %}
 {% block "head" %}
   <script type="text/javascript" src="/admin/js/tmpl.js"></script>
   <script type="text/javascript" src="/admin/js/time.js"></script>
@@ -19,7 +19,7 @@
     {% for account in accounts %}
     <tr>
       <td>{{ account.empire_id }}</td>
-      <td><a href="/admin/empires/{{ account.empire_id }}">{{ empires[account.empire_id].display_name }}</a></td>
+      <td>{% include "inc/empire_name.html" empire = empires[account.empire_id] %}</td>
       <td><span title="Canonical: {{ account.email_canonical }}">{{ account.email }}</span></td>
       <td><span title="{{ account.email_verification_code }}">{{ account.email_status }}</span></td>
       <td>{% if account.email_status != null && account.email_status.toString() == "UNVERIFIED" %}

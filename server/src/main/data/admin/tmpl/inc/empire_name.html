@@ -1,0 +1,7 @@
+<a href="/admin/empires/{{ empire.id }}">
+  {% if empire.display_name == "" %}
+    # {{ empire.id }}
+  {% else %}
+    {{ empire.display_name }}
+  {% end %}
+</a>

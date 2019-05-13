@@ -3,8 +3,6 @@ package au.com.codeka.warworlds.server.world.generator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
-import java.util.TreeMap;
 
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.PointCloud;

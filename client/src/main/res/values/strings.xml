@@ -16,7 +16,7 @@
   <string name="next">Next</string>
   <string name="back">Back</string>
   <string name="empire">Empire</string>
-  <string name="sitrep">Sit. Rep.</string>
+  <string name="sitrep">Situation report</string>
   <string name="view">View</string>
   <string name="rename">Rename</string>
   <string name="alliance">Alliance</string>
@@ -42,6 +42,19 @@
   <string name="locate">Locate</string>
   <string name="yes">Yes</string>
   <string name="no">No</string>
+  <string name="plus">+</string>
+  <string name="minus">-</string>
+  <string name="buildings">Buildings</string>
+  <string name="ships">Ships</string>
+  <string name="queue">Queue</string>
+  <string name="overview">Overview</string>
+  <string name="colonies">Colonies</string>
+  <string name="fleets">Fleets</string>
+  <string name="efficiency">Efficiency</string>
+  <string name="upgrade">Upgrade</string>
+  <string name="settings">Settings</string>
+  <string name="starfield">Starfield</string>
+  <string name="star_search">Search stars</string>
 
   <string name="create_empire_welcome">
     Before you begin, you need to tell us a little about your Empire. Fill in the details below to
@@ -60,6 +73,7 @@
   <string name="num_to_build">Number to build:</string>
   <string name="current_level">Current level:</string>
   <string name="time_to_build">Time to build:</string>
+  <string name="time_to_upgrade">Time to upgrade:</string>
 
   <string name="pref_category_chat">Chat</string>
   <string name="pref_chat_profanity_filter">Filter profanity</string>
@@ -103,5 +117,32 @@
   </string>
   <string name="signin_error_unknown">
     Oops, something\'s gone wrong!
+  </string>
+
+  <string name="empire_settings_patreon">Patreon</string>
+  <string name="empire_settings_patreon_desc">
+    Connect your empire to your Patreon account in order to collect your benefits!\n\n
+    <a href="https://www.patreon.com/codeka">And of course, click here to support me if you\'re not already!</a>
+  </string>
+  <string name="empire_settings_patreon_connect">Connect to Patreon</string>
+  <string name="empire_settings_rename">Rename Empire</string>
+  <string name="empire_settings_rename_desc">
+    You can purchase the ability to rename your empire for %1s below. Enter a new name and click
+    &quot;Rename&quot;.
+  </string>
+  <string name="empire_settings_shield">Upload Custom Shield</string>
+  <string name="empire_settings_shield_desc">
+    You can upload a custom shield image for %1s. Note: shield images will be reviewed and
+    inappropriate images will be removed.\n\n
+    <a href='http://www.war-worlds.com/doc/empire-settings/shield'>Click here for more
+    information.</a>
+  </string>
+  <string name="empire_settings_shield_choose">Choose Shield</string>
+  <string name="empire_settings_reset">Reset Empire</string>
+  <string name="empire_settings_reset_desc">
+    Resetting your empire will destroy your current empire and allow you to restart the game from a
+    fresh star. The cost of this purchase increases as the size of your empire increase: to reset
+    an empire with four stars or less is free, resetting an empire with up to 10 stars is %1s and
+    resetting an empire with &gt; 10 stars is %2s.
   </string>
 </resources>

@@ -3,8 +3,10 @@ package au.com.codeka.warworlds.common.sim;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -12,6 +14,7 @@ import javax.annotation.Nullable;
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.Time;
 import au.com.codeka.warworlds.common.proto.BuildRequest;
+import au.com.codeka.warworlds.common.proto.Building;
 import au.com.codeka.warworlds.common.proto.Colony;
 import au.com.codeka.warworlds.common.proto.CombatReport;
 import au.com.codeka.warworlds.common.proto.Design;
@@ -19,6 +22,8 @@ import au.com.codeka.warworlds.common.proto.EmpireStorage;
 import au.com.codeka.warworlds.common.proto.Fleet;
 import au.com.codeka.warworlds.common.proto.Planet;
 import au.com.codeka.warworlds.common.proto.Star;
+
+import static au.com.codeka.warworlds.common.sim.SimulationHelper.trimTimeToStep;
 
 /** This class is used to simulate a {@link Star}. */
 public class Simulation {
@@ -28,8 +33,13 @@ public class Simulation {
 
   private static final boolean sDebug = false;
 
+  /**
+   * A small floating-point value, if you have fewer ships than this, then you basically have none.
+   */
+  private static final double EPSILON = 0.1;
+
   /** Step time is 10 minutes. */
-  private static final long STEP_TIME = 10 * Time.MINUTE;
+  public static final long STEP_TIME = 10 * Time.MINUTE;
 
   public Simulation() {
     this(System.currentTimeMillis(), true, sDebug ? new BasicLogHandler() : null);
@@ -63,19 +73,15 @@ public class Simulation {
     if (logHandler != null) {
       logHandler.setStarName(star.name);
     }
-    log(String.format("Begin simulation for '%s'", star.name));
+    log("Begin simulation for '%s' @ %d", star.name, timeOverride);
 
     // figure out the start time, which is the oldest last_simulation time
     long startTime = getSimulateStartTime(star);
-    if (startTime >= trimTimeToStep(timeOverride) && !predict) {
-      log("Simulation already up-to-date, not simulating.");
-      return;
-    }
     long endTime = trimTimeToStep(timeOverride);
 
     HashSet<Long> empireIds = new HashSet<>();
     for (Planet planet : star.planets) {
-      if (planet.colony != null && !empireIds.contains(planet.colony.empire_id)) {
+      if (planet.colony != null) {
         empireIds.add(planet.colony.empire_id);
       }
     }
@@ -88,7 +94,7 @@ public class Simulation {
     Star.Builder predictionStar = null;
     long now = startTime;
     while (true) {
-      if (now < endTime) {
+      if (now <= endTime) {
         simulateStepForAllEmpires(now, star, empireIds);
       } else if (predictionStar == null) {
         // This is also the time to simulate combat. The star has been simulated up to "now", combat
@@ -102,7 +108,7 @@ public class Simulation {
         log("Begin prediction");
         simulateStepForAllEmpires(now, predictionStar, empireIds);
         copyDeltas(star, predictionStar);
-      } else if (predict && now < predictionTime) {
+      } else if (predict && now <= predictionTime) {
         simulateStepForAllEmpires(now, predictionStar, empireIds);
       } else {
         break;
@@ -110,7 +116,8 @@ public class Simulation {
       now += STEP_TIME;
     }
 
-    // copy the end times for builds from the prediction star
+    // Copy the end times for builds from the prediction star.
+    long stepStartTime = trimTimeToStep(timeOverride);
     for (int i = 0; i < star.planets.size(); i++) {
       Planet predictionPlanet = predictionStar.planets.get(i);
       Planet.Builder planet = star.planets.get(i).newBuilder();
@@ -124,33 +131,50 @@ public class Simulation {
       for (BuildRequest predictionBuildRequest : predictionPlanet.colony.build_requests) {
         for (int j = 0; j < planet.colony.build_requests.size(); j++) {
           BuildRequest.Builder br = planet.colony.build_requests.get(j).newBuilder();
+
           if (predictionBuildRequest.id.equals(br.id)) {
-            buildRequests.add(br
-                .end_time(predictionBuildRequest.end_time)
-                .build());
+            br.end_time(predictionBuildRequest.end_time);
+            buildRequests.add(br.build());
           }
         }
       }
       planet.colony(planet.colony.newBuilder().build_requests(buildRequests).build());
       star.planets.set(i, planet.build());
     }
-    star.last_simulation = endTime;
+
+    star.last_simulation = timeOverride;
   }
 
   /**
    * After simulating the first step in the prediction star, copy the mineral, goods and energy
-   * deltas across to the main star.
+   * deltas across to the main star. Also copy the build request efficiencies, since they're also
+   * the ones we'll care about (i.e. the efficient for the *next* step).
    */
   private void copyDeltas(Star.Builder star, Star.Builder predictionStar) {
     ArrayList<EmpireStorage> stores = new ArrayList<>();
     for (int i = 0; i < star.empire_stores.size(); i++) {
-      stores.add(star.empire_stores.get(i).newBuilder()
-          .minerals_delta_per_hour(predictionStar.empire_stores.get(i).minerals_delta_per_hour)
-          .goods_delta_per_hour(predictionStar.empire_stores.get(i).goods_delta_per_hour)
-          .energy_delta_per_hour(predictionStar.empire_stores.get(i).energy_delta_per_hour)
-          .build());
+      stores.add(predictionStar.empire_stores.get(i).newBuilder().build());
     }
     star.empire_stores(stores);
+
+    for (int i = 0; i < star.planets.size(); i++) {
+      Planet.Builder planetBuilder = star.planets.get(i).newBuilder();
+      if (planetBuilder.colony != null) {
+        Colony.Builder colonyBuilder = planetBuilder.colony.newBuilder();
+        for (int j = 0; j < planetBuilder.colony.build_requests.size(); j++) {
+          BuildRequest.Builder brBuilder = colonyBuilder.build_requests.get(j).newBuilder();
+          BuildRequest predictionBuildRequest =
+              predictionStar.planets.get(i).colony.build_requests.get(j);
+          brBuilder.minerals_efficiency(predictionBuildRequest.minerals_efficiency);
+          brBuilder.population_efficiency(predictionBuildRequest.population_efficiency);
+          brBuilder.progress_per_step(predictionBuildRequest.progress_per_step);
+          brBuilder.delta_minerals_per_hour(predictionBuildRequest.delta_minerals_per_hour);
+          colonyBuilder.build_requests.set(j, brBuilder.build());
+        }
+        planetBuilder.colony(colonyBuilder.build());
+      }
+      star.planets.set(i, planetBuilder.build());
+    }
   }
 
   /**
@@ -164,7 +188,7 @@ public class Simulation {
 
     // if there's only native colonies, don't bother simulating from more than
     // 24 hours ago. The native colonies will generally be in a steady state
-    long oneDayAgo = System.currentTimeMillis() - Time.DAY;
+    long oneDayAgo = timeOverride - Time.DAY;
     if (lastSimulation != null && lastSimulation < oneDayAgo) {
       log("Last simulation more than on day ago, checking whether there are any non-native "
           + "colonies.");
@@ -187,18 +211,14 @@ public class Simulation {
 
     if (lastSimulation == null) {
       log("Star has never been simulated, simulating for 1 step only");
-      lastSimulation = System.currentTimeMillis() - STEP_TIME;
+      return trimTimeToStep(timeOverride);
     }
-    return trimTimeToStep(lastSimulation);
-  }
 
-  /** Trims a time to the step time. */
-  private static long trimTimeToStep(long time) {
-    return (time / STEP_TIME) * STEP_TIME;
+    return trimTimeToStep(lastSimulation) + STEP_TIME;
   }
 
   private void simulateStepForAllEmpires(long now, Star.Builder star, Set<Long> empireIds) {
-    log("- Step [now=%s]", Time.format(now));
+    log("- Step [now=%d]", now);
     for (Long empireId : empireIds) {
       log(String.format("-- Empire [%s]", empireId == null ? "Native" : empireId));
       simulateStep(now, star, empireId);
@@ -222,6 +242,10 @@ public class Simulation {
       return;
     }
 
+    storage.max_goods = 1000.0f;
+    storage.max_energy = 1000.0f;
+    storage.max_minerals = 1000.0f;
+
     float dt = Time.toHours(STEP_TIME);
     float goodsDeltaPerHour = 0.0f;
     float mineralsDeltaPerHour = 0.0f;
@@ -237,6 +261,42 @@ public class Simulation {
         continue;
       }
 
+      // Apply storage bonuses this round (note: this could change from step to step, if a building
+      // finishes being built, for example).
+      for (Building building : colony.buildings) {
+        Design design = DesignHelper.getDesign(building.design_type);
+        List<Design.Effect> effects = design.effect;
+        if (building.level != null && building.level > 1) {
+          effects = design.upgrades.get(building.level).effects;
+        }
+        for (Design.Effect effect : effects) {
+          if (effect.type == Design.EffectType.STORAGE) {
+            storage.max_goods += effect.goods;
+            storage.max_minerals += effect.minerals;
+            storage.max_energy += effect.energy;
+          }
+        }
+      }
+
+      // Some sanity checks.
+      if (Float.isNaN(storage.total_energy) || Float.isInfinite(storage.total_energy)) {
+        storage.total_energy = 0.0f;
+      }
+      if (Float.isNaN(storage.total_goods) || Float.isInfinite(storage.total_goods)) {
+        storage.total_goods = 0.0f;
+      }
+      if (Float.isNaN(storage.total_minerals) || Float.isInfinite(storage.total_minerals)) {
+        storage.total_minerals = 0.0f;
+      }
+
+      if (Float.isNaN(colony.focus.construction) || Float.isInfinite(colony.focus.construction) ||
+          Float.isNaN(colony.focus.farming) || Float.isInfinite(colony.focus.farming) ||
+          Float.isNaN(colony.focus.mining) || Float.isInfinite(colony.focus.mining) ||
+          Float.isNaN(colony.focus.energy) || Float.isInfinite(colony.focus.energy)) {
+        colony.focus(colony.focus.newBuilder()
+            .construction(0.25f).energy(0.25f).farming(0.25f).mining(0.25f).build());
+      }
+
       log("--- Colony [planetIndex=%d] [population=%.2f]", i, colony.population);
 
       // Calculate the output from farming this turn and add it to the star global
@@ -249,29 +309,29 @@ public class Simulation {
           storage.total_goods, goods, goods * dt);
 
       // calculate the output from mining this turn and add it to the star global
-      float minerals =
+      float mineralsPerHour =
           colony.population * colony.focus.mining * (planet.mining_congeniality / 100.0f);
-      colony.delta_minerals(minerals);
-      storage.total_minerals(Math.max(0, storage.total_minerals + minerals * dt));
-      mineralsDeltaPerHour += minerals;
+      colony.delta_minerals(mineralsPerHour);
+      storage.total_minerals(Math.max(0, storage.total_minerals + mineralsPerHour * dt));
+      mineralsDeltaPerHour += mineralsPerHour;
       log("    Minerals: [total=%.2f] [delta=%.2f / hr] [this turn=%.2f]",
-          storage.total_minerals, minerals, minerals * dt);
+          storage.total_minerals, mineralsPerHour, mineralsPerHour * dt);
 
       // calculate the output from energy this turn and add it to the star global
-      float enegry =
+      float energy =
           colony.population * colony.focus.energy * (planet.energy_congeniality / 100.0f);
-      colony.delta_energy(enegry);
-      storage.total_energy(Math.max(0, storage.total_energy + enegry * dt));
-      energyDeltaPerHour += enegry;
+      colony.delta_energy(energy);
+      storage.total_energy(Math.max(0, storage.total_energy + energy * dt));
+      energyDeltaPerHour += energy;
       log("    Energy: [total=%.2f] [delta=%.2f / hr] [this turn=%.2f]",
-          storage.total_energy, enegry, enegry * dt);
+          storage.total_energy, energy, energy * dt);
 
       totalPopulation += colony.population;
 
       star.planets.set(i, planet.newBuilder().colony(colony.build()).build());
     }
 
-    // A second loop though the colonies, once the goods/minerals have been calculated.
+    // A second loop though the colonies, once the goods/minerals/energy has been calculated.
     for (int i = 0; i < star.planets.size(); i++) {
       Planet.Builder planet = star.planets.get(i).newBuilder();
       if (planet.colony == null) {
@@ -289,7 +349,7 @@ public class Simulation {
       // based on the number of ACTUAL build requests they'll be working on this turn
       int numValidBuildRequests = 0;
       for (BuildRequest br : colony.build_requests) {
-        if (br.start_time > now + STEP_TIME) {
+        if (br.start_time >= now) {
           continue;
         }
         if (br.progress >= 1.0f) {
@@ -317,10 +377,14 @@ public class Simulation {
         ArrayList<BuildRequest> completeBuildRequests = new ArrayList<>();
         for (int j = 0; j < colony.build_requests.size(); j++) {
           BuildRequest.Builder br = colony.build_requests.get(j).newBuilder();
+          // Sanity check.
+          if (Float.isNaN(br.progress)) {
+            br.progress(0.0f);
+          }
           Design design = DesignHelper.getDesign(br.design_type);
 
           long startTime = br.start_time;
-          if (startTime > now + STEP_TIME || br.progress >= 1.0f) {
+          if (startTime > now || br.progress >= 1.0f) {
             completeBuildRequests.add(br.build());
             continue;
           }
@@ -328,39 +392,65 @@ public class Simulation {
           // the build cost is defined by the original design, or possibly by the upgrade if that
           // is what it is.
           Design.BuildCost buildCost = design.build_cost;
+          if (br.building_id != null) {
+            for (Building building : colony.buildings) {
+              if (Objects.equals(building.id, br.building_id)) {
+                buildCost = design.upgrades.get(building.level - 1).build_cost;
+                break;
+              }
+            }
+          }
           //if (br.mExistingFleetID != null) {
           //  ShipDesign shipDesign = (ShipDesign) design;
           //  ShipDesign.Upgrade upgrade = shipDesign.getUpgrade(br.getUpgradeID());
           //  buildCost = upgrade.getBuildCost();
           //}
 
-          log("---- Building [design=%s %s] [count=%d] cost [workers=%d] [minerals=%d] [start-time=%s]",
+          log("---- Building [design=%s %s] [count=%d] cost [workers=%d] [minerals=%d] [start-time=%d]",
               design.design_kind, design.type, br.count, buildCost.population, buildCost.minerals,
-              Time.format(br.start_time));
+              br.start_time);
 
           // The total amount of time to build something is based on the number of workers it
           // requires, if you have the right number of workers and the right amount of minerals,
-          // you can finish the build in one turn. We require whatever fraction of progress is left
-          // of both minerals and workers.
-          float totalWorkersRequired = buildCost.population * (1.0f - br.progress) * br.count;
-          float totalMineralsRequired = buildCost.minerals * (1.0f - br.progress) * br.count;
+          // you can finish the build in one turn. However, if you only have a fraction of them
+          // available, then that fraction of progress will be made.
+          float totalWorkersRequired = buildCost.population * br.count;
+          float totalMineralsRequired = buildCost.minerals * br.count;
           log("     Required: [population=%.2f] [minerals=%.2f]",
               totalWorkersRequired, totalMineralsRequired);
+          log("     Available: [population=%.2f] [minerals=%.2f]",
+              workersPerBuildRequest, mineralsPerBuildRequest);
 
-          // The amount of work we can do this turn is the minimum of whatever resources we have
-          // available allows.
-          float progressThisTurn = Math.min(
-              workersPerBuildRequest / totalWorkersRequired,
-              mineralsPerBuildRequest / totalMineralsRequired);
-          log("     Progress: [this turn=%.4f] [total=%.4f]",
-              progressThisTurn, br.progress + progressThisTurn);
+          // The amount of work we can do this turn is based on how much population we have (if
+          // we have enough minerals) or based the min of population/minerals if we don't.
+          float populationProgressThisTurn = workersPerBuildRequest / totalWorkersRequired;
+          float mineralsProgressThisTurn = mineralsPerBuildRequest / totalMineralsRequired;
+          float progressThisTurn =
+              mineralsProgressThisTurn >= 1.0
+                  ? populationProgressThisTurn
+                  : Math.min(populationProgressThisTurn, mineralsProgressThisTurn);
+          log("     Progress: [this turn=%.4f (minerals=%.4f pop=%.4f] [total=%.4f]",
+              progressThisTurn,
+              mineralsProgressThisTurn,
+              populationProgressThisTurn,
+              br.progress + progressThisTurn);
 
           // If it started half way through this step, the progress is lessened.
           if (br.start_time > now) {
             float fraction = ((float) startTime - now) / STEP_TIME;
             progressThisTurn *= fraction;
-            log("    - reduced progress: %.2f (fraction=%.2f)", progressThisTurn, fraction);
+            log("     Reduced progress: %.2f (fraction=%.2f)", progressThisTurn, fraction);
           }
+
+          float mineralsUsedThisTurn = Math.min(totalMineralsRequired, mineralsPerBuildRequest);
+          if (populationProgressThisTurn < mineralsProgressThisTurn) {
+            // If we're limited by population, then we won't have used all of the minerals that
+            // were available to us.
+            mineralsUsedThisTurn *= populationProgressThisTurn;
+          }
+          storage.total_minerals(Math.max(0, storage.total_minerals - mineralsUsedThisTurn));
+          br.delta_minerals_per_hour(-mineralsUsedThisTurn * STEP_TIME / Time.HOUR);
+          log("     Used: [minerals=%.4f]", mineralsUsedThisTurn);
 
           // what is the current amount of time we have now as a percentage of the total build
           // time?
@@ -368,15 +458,16 @@ public class Simulation {
             // OK, we've finished! Work out how far into the step we completed.
             float unusedProgress = progressThisTurn + br.progress - 1.0f;
             float fractionProgress = (progressThisTurn - unusedProgress) / progressThisTurn;
-            long endTime = now;
-            if (br.start_time > now) {
+            long endTime = now - STEP_TIME;
+            if (br.start_time > endTime) {
               endTime = br.start_time;
             }
             endTime += (long)(STEP_TIME * fractionProgress);
 
-            log("     FINISHED! fraction-progress = %.2f, end-time=%s",
-                fractionProgress, Time.format(endTime));
+            log("     FINISHED! progress-this-turn: %.2f fraction-progress = %.2f, end-time=%d",
+                progressThisTurn, fractionProgress, endTime);
             br.progress(1.0f);
+            br.progress_per_step(progressThisTurn);
             br.end_time(endTime);
             completeBuildRequests.add(br.build());
             continue;
@@ -388,20 +479,33 @@ public class Simulation {
           float remainingMineralsRequired =
               buildCost.minerals * (1.0f - br.progress - progressThisTurn) * br.count;
 
-          float mineralsUsedThisTurn = totalMineralsRequired - remainingMineralsRequired;
-          storage.total_minerals(Math.max(0, storage.total_minerals - mineralsUsedThisTurn));
-          mineralsDeltaPerHour -= mineralsUsedThisTurn;
-          log("     Used: [minerals=%.4f]", mineralsUsedThisTurn);
-
-          float timeForMineralsHours =
-              remainingMineralsRequired / mineralsUsedThisTurn / (Time.HOUR / STEP_TIME);
-          float timeForPopulationHours =
-              remainingWorkersRequired / workersPerBuildRequest / (Time.HOUR / STEP_TIME);
-          log("     Remaining: [minerals=%.2f hrs] [population=%.2f hrs]",
-              timeForMineralsHours, timeForPopulationHours);
+          float timeForMineralsSteps =
+              (remainingMineralsRequired / mineralsPerBuildRequest);
+          float timeForPopulationSteps =
+              (remainingWorkersRequired / workersPerBuildRequest);
+          float timeForMineralsHours = timeForMineralsSteps * STEP_TIME / Time.HOUR;
+          float timeForPopulationHours = timeForPopulationSteps * STEP_TIME / Time.HOUR;
+          log("     Remaining: [minerals=%.2f hrs %.2f steps] [population=%.2f hrs %.2f steps]",
+              timeForMineralsHours,
+              timeForMineralsSteps,
+              timeForPopulationHours,
+              timeForPopulationSteps);
           br.end_time(now +
-              Math.round(Math.max(timeForMineralsHours, timeForPopulationHours)) * Time.HOUR);
+              Math.round(Math.max(timeForMineralsHours, timeForPopulationHours) * Time.HOUR));
+          log("     Finish time: %d (now=%d)",
+              now + Math.round(Math.max(timeForMineralsHours, timeForPopulationHours) * Time.HOUR),
+              now);
           br.progress(br.progress + progressThisTurn);
+          br.progress_per_step(progressThisTurn);
+
+          // Calculate the efficiency of the minerals vs. population
+          float sumTimeInHours = timeForMineralsHours + timeForPopulationHours;
+          float mineralsEfficiency = 1 - (timeForMineralsHours / sumTimeInHours);
+          float populationEfficiency = 1 - (timeForPopulationHours / sumTimeInHours);
+          br.minerals_efficiency(mineralsEfficiency);
+          br.population_efficiency(populationEfficiency);
+          log("     Efficiency: [minerals=%.3f] [population=%.3f]",
+              mineralsEfficiency, populationEfficiency);
 
           completeBuildRequests.add(br.build());
         }
@@ -411,12 +515,41 @@ public class Simulation {
       }
     }
 
+    // Now loop through the fleets and see if there's any that needs more fuel. Fill 'em up if there
+    // is.
+    for (int i = 0; i < star.fleets.size(); i++) {
+      if (storage.total_energy < 0.001f) {
+        break;
+      }
+
+      Fleet.Builder fleet = star.fleets.get(i).newBuilder();
+      if (!equalEmpire(fleet.empire_id, empireId)) {
+        continue;
+      }
+
+      // TODO: this shouldn't happen normally, it's just for fleets that we added before adding fuel
+      // to the game.
+      if (fleet.fuel_amount == null) {
+        fleet.fuel_amount(0.0f);
+      }
+
+      Design design = DesignHelper.getDesign(fleet.design_type);
+      float neededFuelTotal = (float) design.fuel_size * fleet.num_ships;
+      if (fleet.fuel_amount < neededFuelTotal) {
+        float neededFuelRemaining = neededFuelTotal - fleet.fuel_amount;
+        float actual = Math.min(neededFuelRemaining, storage.total_energy);
+        fleet.fuel_amount += actual;
+        storage.total_energy -= actual;
+        log("--- Fleet %d [%s x %.0f] re-fueling: %.2f",
+            fleet.id, design.display_name, fleet.num_ships, actual);
+      }
+
+      star.fleets.set(i, fleet.build());
+    }
+
     // Finally, update the population. The first thing we need to do is evenly distribute goods
     // between all of the colonies.
-    float totalGoodsPerHour = totalPopulation / 10.0f;
-    if (totalPopulation > 0.0001f && totalGoodsPerHour < 10.0f) {
-      totalGoodsPerHour = 10.0f;
-    }
+    float totalGoodsPerHour = Math.min(10.0f, totalPopulation / 10.0f);
     float totalGoodsRequired = totalGoodsPerHour * dt;
     goodsDeltaPerHour -= totalGoodsPerHour;
 
@@ -499,11 +632,7 @@ public class Simulation {
     storage.goods_delta_per_hour(goodsDeltaPerHour);
     storage.minerals_delta_per_hour(mineralsDeltaPerHour);
     storage.energy_delta_per_hour(energyDeltaPerHour);
-    if (storageIndex >= 0) {
-      star.empire_stores.set(storageIndex, storage.build());
-    } else {
-      star.empire_stores.add(storage.build());
-    }
+    star.empire_stores.set(storageIndex, storage.build());
   }
 
   /**
@@ -613,7 +742,7 @@ public class Simulation {
           continue;
         }
 
-        if (fleet.num_ships <= damage) {
+        if (damage - fleet.num_ships <= EPSILON) {
           log("      Fleet=%d destroyed (num_ships=%.4f <= damage=%.4f).",
               fleet.id, fleet.num_ships, damage);
           star.fleets.set(i, fleet.newBuilder()
@@ -626,8 +755,8 @@ public class Simulation {
           if (fleet.stance == Fleet.FLEET_STANCE.PASSIVE) {
             state = fleet.state;
           }
-          log("      Fleet=%d numShips=%.4f state=%s.",
-              fleet.id, fleet.num_ships - (float) (double) damage, state);
+          log("      Fleet=%d numShips=%.8f damage=%.8f state=%s.",
+              fleet.id, fleet.num_ships, damage, state);
           star.fleets.set(i, fleet.newBuilder()
               .num_ships(fleet.num_ships - (float) (double) damage)
               .state(state)

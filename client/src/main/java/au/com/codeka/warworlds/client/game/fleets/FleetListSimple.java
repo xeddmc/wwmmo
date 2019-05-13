@@ -6,17 +6,18 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import au.com.codeka.warworlds.client.R;
-import au.com.codeka.warworlds.client.game.build.BuildHelper;
-import au.com.codeka.warworlds.common.sim.DesignHelper;
+import au.com.codeka.warworlds.client.game.build.BuildViewHelper;
 import au.com.codeka.warworlds.common.proto.Design;
 import au.com.codeka.warworlds.common.proto.Fleet;
 import au.com.codeka.warworlds.common.proto.Star;
+import au.com.codeka.warworlds.common.sim.DesignHelper;
 
 /**
  * Represents a simple list of fleets, shown inside a {@link LinearLayout}.
@@ -49,13 +50,10 @@ public class FleetListSimple extends LinearLayout {
 
   private void refresh() {
     if (onClickListener == null) {
-      onClickListener = new View.OnClickListener() {
-        @Override
-        public void onClick(View v) {
-          Fleet fleet = (Fleet) v.getTag();
-          if (fleetSelectedHandler != null) {
-            fleetSelectedHandler.onFleetSelected(fleet);
-          }
+      onClickListener = v -> {
+        Fleet fleet = (Fleet) v.getTag();
+        if (fleetSelectedHandler != null) {
+          fleetSelectedHandler.onFleetSelected(fleet);
         }
       };
     }
@@ -82,11 +80,23 @@ public class FleetListSimple extends LinearLayout {
     View view = inflater.inflate(R.layout.ctrl_fleet_list_simple_row, this, false);
     Design design = DesignHelper.getDesign(fleet.design_type);
 
-    ImageView icon = (ImageView) view.findViewById(R.id.fleet_icon);
-    TextView row1 = (TextView) view.findViewById(R.id.fleet_row1);
-    TextView row2 = (TextView) view.findViewById(R.id.fleet_row2);
+    ImageView icon = view.findViewById(R.id.fleet_icon);
+    TextView row1 = view.findViewById(R.id.fleet_row1);
+    TextView row2 = view.findViewById(R.id.fleet_row2);
+    ProgressBar fuelLevel = view.findViewById(R.id.fuel_level);
 
-    BuildHelper.setDesignIcon(design, icon);
+
+    int maxFuel = (int) (design.fuel_size * fleet.num_ships);
+    int fuelAmount = fleet.fuel_amount == null ? 0 : (int) (float) fleet.fuel_amount;
+    if (maxFuel == fuelAmount) {
+      fuelLevel.setVisibility(View.GONE);
+    } else {
+      fuelLevel.setVisibility(View.VISIBLE);
+      fuelLevel.setMax(maxFuel);
+      fuelLevel.setProgress(fuelAmount);
+    }
+
+    BuildViewHelper.setDesignIcon(design, icon);
 
     row1.setText(FleetListHelper.getFleetName(fleet, design));
     row2.setText(FleetListHelper.getFleetStance(fleet));

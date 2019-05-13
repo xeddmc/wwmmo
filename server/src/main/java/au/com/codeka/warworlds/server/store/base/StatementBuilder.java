@@ -9,7 +9,6 @@ import java.sql.Types;
 import java.util.ArrayList;
 
 import javax.annotation.Nullable;
-import javax.sql.PooledConnection;
 
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.server.store.StoreException;

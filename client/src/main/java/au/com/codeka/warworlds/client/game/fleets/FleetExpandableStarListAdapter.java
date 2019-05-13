@@ -10,10 +10,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.squareup.picasso.Picasso;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -21,10 +19,10 @@ import javax.annotation.Nullable;
 
 import au.com.codeka.warworlds.client.R;
 import au.com.codeka.warworlds.client.ctrl.ExpandableStarListAdapter;
-import au.com.codeka.warworlds.client.util.NumberFormatter;
 import au.com.codeka.warworlds.client.game.world.EmpireManager;
 import au.com.codeka.warworlds.client.game.world.ImageHelper;
 import au.com.codeka.warworlds.client.game.world.StarCollection;
+import au.com.codeka.warworlds.client.util.NumberFormatter;
 import au.com.codeka.warworlds.common.proto.Design;
 import au.com.codeka.warworlds.common.proto.Empire;
 import au.com.codeka.warworlds.common.proto.Fleet;
@@ -40,6 +38,12 @@ public class FleetExpandableStarListAdapter extends ExpandableStarListAdapter<Fl
 
   private boolean multiSelect;
   @Nullable private Long selectedFleetId;
+
+  /**
+   * The star the currently-selected fleet(s) belong to. It's not currently supported to select
+   * multiple fleets from different stars.
+   */
+  @Nullable private Star selectedStar;
 
   /** A list of fleets that are currently selected, contains more than one in multi-select mode. */
   private final Set<Long> selectedFleetIds = new HashSet<>();
@@ -60,6 +64,18 @@ public class FleetExpandableStarListAdapter extends ExpandableStarListAdapter<Fl
 
   public Collection<Long> getSelectedFleetIds() {
     return selectedFleetIds;
+  }
+
+  /**
+   * Returns the currently-selected star. This will be non-null if you have one or more fleets
+   * selected under the given star. If you have no fleets selected, or you have fleets selected
+   * under multiple stars, this will return null.
+   *
+   * @return The currently-selected {@link Star}, or null.
+   */
+  @Nullable
+  public Star getSelectedStar() {
+    return selectedStar;
   }
 
   /** Disable all fleets that match the given predicate. */
@@ -99,8 +115,10 @@ public class FleetExpandableStarListAdapter extends ExpandableStarListAdapter<Fl
     }
   }
 
-  public void setSelectedFleetId(@Nullable Long starId, @Nullable Long fleetId) {
+  public void setSelectedFleetId(@Nullable Star star, @Nullable Long fleetId) {
     selectedFleetId = fleetId;
+    selectedStar = star;
+
     if (multiSelect) {
       if (!selectedFleetIds.contains(fleetId)) {
         selectedFleetIds.add(fleetId);
@@ -109,10 +127,20 @@ public class FleetExpandableStarListAdapter extends ExpandableStarListAdapter<Fl
       selectedFleetIds.clear();
       selectedFleetIds.add(fleetId);
     }
+
+    notifyDataSetChanged();
   }
 
   public void onItemClick(int groupPosition, int childPosition) {
+    Star star = getGroup(groupPosition);
     Fleet fleet = getChild(groupPosition, childPosition);
+
+    if (selectedStar == null || selectedStar.id.equals(star.id)) {
+      selectedStar = star;
+    } else {
+      selectedStar = null;
+    }
+
     if (multiSelect) {
       if (!selectedFleetIds.remove(fleet.id)) {
         selectedFleetIds.add(fleet.id);
@@ -167,11 +195,11 @@ public class FleetExpandableStarListAdapter extends ExpandableStarListAdapter<Fl
       view = inflater.inflate(R.layout.fleets_star_row, parent, false);
     }
 
-    ImageView starIcon = (ImageView) view.findViewById(R.id.star_icon);
-    TextView starName = (TextView) view.findViewById(R.id.star_name);
-    TextView starType = (TextView) view.findViewById(R.id.star_type);
-    TextView fightersTotal = (TextView) view.findViewById(R.id.fighters_total);
-    TextView nonFightersTotal = (TextView) view.findViewById(R.id.nonfighters_total);
+    ImageView starIcon = view.findViewById(R.id.star_icon);
+    TextView starName = view.findViewById(R.id.star_name);
+    TextView starType = view.findViewById(R.id.star_type);
+    TextView fightersTotal = view.findViewById(R.id.fighters_total);
+    TextView nonFightersTotal = view.findViewById(R.id.nonfighters_total);
 
     if (star == null) {
       starIcon.setImageBitmap(null);
@@ -180,7 +208,7 @@ public class FleetExpandableStarListAdapter extends ExpandableStarListAdapter<Fl
       fightersTotal.setText("...");
       nonFightersTotal.setText("...");
     } else {
-      Picasso.with(view.getContext())
+      Picasso.get()
           .load(ImageHelper.getStarImageUrl(view.getContext(), star, 16, 16))
           .into(starIcon);
 

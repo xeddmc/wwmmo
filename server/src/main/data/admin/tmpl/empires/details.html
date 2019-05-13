@@ -1,14 +1,48 @@
 {% extends "skeleton.html" %}
 {% block "title" %}Empires{% end %}
 {% block "head" %}
+  <link rel="stylesheet" href="/admin/css/star.css">
   <script type="text/javascript" src="/admin/js/tmpl.js"></script>
   <script type="text/javascript" src="/admin/js/time.js"></script>
-  <script>
-  </script>
 {% end %}
 {% block "content" %}
   <h1>{{ empire.display_name }}</h1>
 
+  <h2>Devices</h2>
+  <table>
+    <tr>
+      <th>ID</th>
+      <th>Model</th>
+      <th>Manufacturer</th>
+      <th>Build</th>
+      <th>Version</th>
+      <th>FCM token</th>
+    </tr>
+    {% for device in devices %}
+    <tr>
+      <td>{{ device.device_id }}</td>
+      <td>{{ device.device_model }}</td>
+      <td>{{ device.device_manufacturer }}</td>
+      <td>{{ device.device_build }}</td>
+      <td>{{ device.device_version }}</td>
+      <td>{{ String.trunc(device.fcm_device_info.token, 15) }}</td>
+    </tr>
+    {% end %}
+  </table>
+  <h2>Send message</h2>
+  <form method="post">
+    <input type="text" name="msg">
+    <input type="submit" value="Send">
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% end %}
+  </form>
+  {% if patreon %}
+    <h2>Patreon</h2>
+    <textarea>
+      {{ Gson.encode(patreon) }}
+    </textarea>
+  {% end %}
   <h2>Stars</h2>
   <table>
     <tr>
@@ -18,7 +52,7 @@
     {% for star in stars %}
       <tr>
         <td>{{ star.id }}</td>
-        <td><a href="/admin/starfield?sector={{ star.sector_x }},{{ star.sector_y }}&star={{ star.id }}">{{ star.name }}</a></td>
+        <td>{% include "inc/star_name.html" %}</td>
       </tr>
     {% end %}
   </table>

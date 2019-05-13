@@ -1,11 +1,9 @@
 package au.com.codeka.warworlds.server.handlers;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.regex.Matcher;
 
 import javax.servlet.GenericServlet;
-import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
@@ -26,8 +24,7 @@ public class HandlerServlet extends GenericServlet {
   }
 
   @Override
-  public void service(ServletRequest request, ServletResponse response)
-      throws IOException, ServletException {
+  public void service(ServletRequest request, ServletResponse response) {
     for (Route route : routes) {
       Matcher matcher = route.matches((HttpServletRequest) request);
       if (matcher != null) {

@@ -17,8 +17,8 @@ import javax.annotation.Nullable;
 
 import au.com.codeka.warworlds.client.App;
 import au.com.codeka.warworlds.client.R;
-import au.com.codeka.warworlds.client.game.chat.ChatFragment;
 import au.com.codeka.warworlds.client.game.chat.ChatHelper;
+import au.com.codeka.warworlds.client.game.chat.ChatScreen;
 import au.com.codeka.warworlds.client.game.world.ChatManager;
 import au.com.codeka.warworlds.client.game.world.ChatMessagesUpdatedEvent;
 import au.com.codeka.warworlds.client.util.eventbus.EventHandler;
@@ -29,7 +29,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * A view that contains the last couple of chat messages, and expands to the full
- * {@link ChatFragment} when you tap it.
+ * {@link ChatScreen} when you tap it.
  */
 public class ChatMiniView extends RelativeLayout {
   public interface Callback {
@@ -50,9 +50,9 @@ public class ChatMiniView extends RelativeLayout {
 
     inflate(context, R.layout.ctrl_chat_mini_view, this);
 
-    scrollView = (ScrollView) findViewById(R.id.scrollview);
-    msgsContainer = (LinearLayout) findViewById(R.id.msgs_container);
-    unreadMsgCount = (Button) findViewById(R.id.unread_btn);
+    scrollView = findViewById(R.id.scrollview);
+    msgsContainer = findViewById(R.id.msgs_container);
+    unreadMsgCount = findViewById(R.id.unread_btn);
 
     if (this.isInEditMode()) {
       return;

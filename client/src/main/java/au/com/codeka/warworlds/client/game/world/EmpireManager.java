@@ -1,8 +1,7 @@
 package au.com.codeka.warworlds.client.game.world;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 
 import java.util.HashSet;
@@ -43,7 +42,7 @@ public class EmpireManager {
   /** An object to synchronize on when updating {@link #pendingEmpireRequests}. */
   private final Object pendingRequestLock = new Object();
 
-  /** Whether a request for emires is currently pending. */
+  /** Whether a request for empires is currently pending. */
   private boolean requestPending;
 
   /** Our current empire, will be null before we're connected. */

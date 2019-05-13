@@ -11,6 +11,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import au.com.codeka.warworlds.common.Log;
+import au.com.codeka.warworlds.server.admin.handlers.AdminFileHandler;
 import au.com.codeka.warworlds.server.admin.handlers.AdminHandler;
 import au.com.codeka.warworlds.server.admin.handlers.AdminLoginHandler;
 import au.com.codeka.warworlds.server.admin.handlers.AjaxAccountsHandler;
@@ -22,8 +23,9 @@ import au.com.codeka.warworlds.server.admin.handlers.AjaxStarfieldHandler;
 import au.com.codeka.warworlds.server.admin.handlers.AjaxUsersHandler;
 import au.com.codeka.warworlds.server.admin.handlers.ChatHandler;
 import au.com.codeka.warworlds.server.admin.handlers.DashboardHandler;
+import au.com.codeka.warworlds.server.admin.handlers.DebugSimulationQueueHandler;
+import au.com.codeka.warworlds.server.admin.handlers.DebugSuspiciousEventsHandler;
 import au.com.codeka.warworlds.server.admin.handlers.EmpireDetailsHandler;
-import au.com.codeka.warworlds.server.admin.handlers.AdminFileHandler;
 import au.com.codeka.warworlds.server.admin.handlers.EmpiresHandler;
 import au.com.codeka.warworlds.server.admin.handlers.SectorsHandler;
 import au.com.codeka.warworlds.server.admin.handlers.StarfieldHandler;
@@ -48,6 +50,8 @@ public class AdminServlet extends HandlerServlet {
       new Route("/users", UsersHandler.class),
       new Route("/users/create", UsersCreateHandler.class),
       new Route("/chat", ChatHandler.class),
+      new Route("/debug/suspicious-events", DebugSuspiciousEventsHandler.class),
+      new Route("/debug/simulation-queue", DebugSimulationQueueHandler.class),
       new Route("/ajax/accounts", AjaxAccountsHandler.class),
       new Route("/ajax/chat", AjaxChatHandler.class),
       new Route("/ajax/empire", AjaxEmpireHandler.class),
@@ -61,7 +65,6 @@ public class AdminServlet extends HandlerServlet {
   public AdminServlet() {
     super(ROUTES);
   }
-
 
   protected void handle(
       Matcher matcher,
@@ -87,9 +90,6 @@ public class AdminServlet extends HandlerServlet {
           sessionCookieValue = cookie.getValue();
           return SessionManager.i.getSession(sessionCookieValue);
         }
-      }
-      if (sessionCookieValue.equals("")) {
-        log.warning("No session cookie found.");
       }
     }
 

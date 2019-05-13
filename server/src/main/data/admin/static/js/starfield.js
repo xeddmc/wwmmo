@@ -15,7 +15,7 @@ $(function() {
     for (var index in sector.stars) {
       var star = sector.stars[index];
       var div = $("<div/>");
-      div.addClass("starfield-star");
+      div.addClass("star-small");
       div.addClass("star-" + star.classification.toLowerCase());
       div.css("left", parseInt(star.offset_x * 0.5) + "px");
       div.css("top", parseInt(star.offset_y * 0.5) + "px");
@@ -88,7 +88,7 @@ $(function() {
     var VISIBLE_FIELDS = {
       "COLONIZE": ["empire_id", "planet_index"],
       "ADJUST_FOCUS": [/*"empire_id", "colony_id", "focus"*/],
-      "CREATE_FLEET": ["empire_id", "design_kind", "count"],
+      "CREATE_FLEET": ["empire_id", "design_type", "count"],
       "ADD_BUILD_REQUEST": ["empire_id", "colony_id", "design_type", "count"],
       "CREATE_BUILDING": ["empire_id", "colony_id", "design_type"],
       "SPLIT_FLEET": ["empire_id", "fleet_id", "count"],
@@ -384,8 +384,15 @@ $(function() {
         if (!shown) {
           showStar(null);
         }
+      },
+      error: function(jqXHR, textStatus, errorThrown) {
+        console.error(textStatus + " " + errorThrown);
       }
     });
+  }
+
+  window.showRaw = function() {
+    $("#simulate-result").html("<pre><code>" + JSON.stringify(currStar, null, 2) + "</code></pre>");
   }
 
   $("#starfield-container a").on("click", function() {

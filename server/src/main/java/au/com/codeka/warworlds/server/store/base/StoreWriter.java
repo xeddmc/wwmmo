@@ -1,6 +1,5 @@
 package au.com.codeka.warworlds.server.store.base;
 
-
 import org.sqlite.javax.SQLiteConnectionPoolDataSource;
 
 import javax.annotation.Nullable;

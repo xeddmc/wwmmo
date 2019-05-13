@@ -5,10 +5,11 @@ buildscript {
     maven {
       url 'https://maven.fabric.io/public'
     }
+    google()
   }
   dependencies {
-    classpath 'com.android.tools.build:gradle:2.4.0-alpha7'
-    classpath 'com.google.gms:google-services:3.0.0'
+    classpath 'com.android.tools.build:gradle:3.4.0'
+    classpath 'com.google.gms:google-services:4.2.0'
   }
 }
 
@@ -19,5 +20,6 @@ allprojects {
     maven {
       url 'https://maven.fabric.io/public'
     }
+    google()
   }
 }

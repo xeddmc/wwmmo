@@ -1,9 +1,9 @@
 package au.com.codeka.warworlds.client.util.eventbus;
 
+import androidx.annotation.Nullable;
+
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
-
-import android.support.annotation.Nullable;
 
 import au.com.codeka.warworlds.client.concurrency.Threads;
 import au.com.codeka.warworlds.common.Log;
@@ -52,19 +52,16 @@ class EventHandlerInfo {
    */
   public void call(final Object event) {
     final Exception callLocation = new Exception("Location of EventHandlerInfo.call()");
-    final Runnable runnable = new Runnable() {
-      @Override
-      public void run() {
-        final Object subscriber = EventHandlerInfo.this.subscriber.get();
-        if (subscriber == null) {
-          return;
-        }
-        try {
-          method.invoke(subscriber, event);
-        } catch (Exception e) {
-          log.error("Exception caught handling event.", e);
-          log.error("Call location.", callLocation);
-        }
+    final Runnable runnable = () -> {
+      final Object subscriber = EventHandlerInfo.this.subscriber.get();
+      if (subscriber == null) {
+        return;
+      }
+      try {
+        method.invoke(subscriber, event);
+      } catch (Exception e) {
+        log.error("Exception caught handling event.", e);
+        log.error("Call location.", callLocation);
       }
     };
 
@@ -74,7 +71,7 @@ class EventHandlerInfo {
     if (callOnThread.isCurrentThread() && callOnThread != Threads.BACKGROUND) {
       runnable.run();
     } else {
-      callOnThread.runTask(runnable);
+      callOnThread.run(runnable);
     }
   }
 }

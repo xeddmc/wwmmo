@@ -2,8 +2,6 @@ package au.com.codeka.warworlds.server.admin;
 
 import org.joda.time.DateTime;
 
-import java.util.List;
-
 import javax.annotation.Nonnull;
 
 import au.com.codeka.warworlds.common.proto.AdminRole;

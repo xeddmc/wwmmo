@@ -5,7 +5,7 @@ import com.google.common.collect.Lists;
 import java.util.List;
 
 import au.com.codeka.warworlds.client.App;
-import au.com.codeka.warworlds.client.game.chat.SendBottomPane;
+import au.com.codeka.warworlds.client.concurrency.Threads;
 import au.com.codeka.warworlds.client.util.eventbus.EventHandler;
 import au.com.codeka.warworlds.common.Time;
 import au.com.codeka.warworlds.common.proto.ChatMessage;
@@ -79,11 +79,13 @@ public class ChatManager {
 
   /** Send the given {@link ChatMessage} to the server. */
   public void sendMessage(ChatMessage msg) {
-    App.i.getServer().send(new Packet.Builder()
-        .chat_msgs(new ChatMessagesPacket.Builder()
-            .messages(Lists.newArrayList(msg))
-            .build())
-        .build());
+    App.i.getTaskRunner().runTask(() -> {
+      App.i.getServer().send(new Packet.Builder()
+          .chat_msgs(new ChatMessagesPacket.Builder()
+              .messages(Lists.newArrayList(msg))
+              .build())
+          .build());
+    }, Threads.BACKGROUND);
   }
 
   private final Object eventListener = new Object() {

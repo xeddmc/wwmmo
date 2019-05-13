@@ -1,6 +1,6 @@
 package au.com.codeka.warworlds.client.concurrency;
 
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
@@ -46,7 +46,7 @@ public class ThreadPool {
         minThreads, maxThreads, keepAliveMs, TimeUnit.MILLISECONDS, workQueue, threadFactory);
   }
 
-  public void runTask(Runnable runnable) {
+  public void run(Runnable runnable) {
     executor.execute(runnable);
   }
 

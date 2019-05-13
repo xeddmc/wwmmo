@@ -1,7 +1,8 @@
 package au.com.codeka.warworlds.client.opengl;
 
 import android.content.Context;
-import android.support.annotation.Nullable;
+
+import androidx.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
 

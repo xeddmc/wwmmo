@@ -1,6 +1,6 @@
 package au.com.codeka.warworlds.client.game.world;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 
 import com.google.common.collect.Lists;
 
@@ -20,7 +20,9 @@ import au.com.codeka.warworlds.common.proto.Packet;
 import au.com.codeka.warworlds.common.proto.Star;
 import au.com.codeka.warworlds.common.proto.StarModification;
 import au.com.codeka.warworlds.common.proto.StarUpdatedPacket;
+import au.com.codeka.warworlds.common.sim.Simulation;
 import au.com.codeka.warworlds.common.sim.StarModifier;
+import au.com.codeka.warworlds.common.sim.SuspiciousModificationException;
 
 /**
  * Manages the {@link Star}s we keep cached and stuff.
@@ -68,7 +70,35 @@ public class StarManager {
     return stars.getLastSimulationOfOurStar();
   }
 
-  public void updateStar(final Star star, final StarModification modification) {
+  /**
+   * Queue up the given {@link Star} to be simulated. The star will be simulated in the background
+   * and will be posted to the event bus when complete.
+   */
+  public void queueSimulateStar(Star star) {
+    // Something more scalable that just queuing them all to the background threadpool...
+    App.i.getTaskRunner().runTask(() -> {
+      simulateStarSync(star);
+    }, Threads.BACKGROUND);
+  }
+
+  /**
+   * Simulate the star on the current thread.
+   */
+  public void simulateStarSync(Star star) {
+    Star.Builder starBuilder = star.newBuilder();
+    new Simulation().simulate(starBuilder);
+
+    // No need to save the star, it's just a simulation, but publish it to the event bus so
+    // clients can see it.
+    App.i.getEventBus().publish(starBuilder.build());
+  }
+
+  public void updateStar(final Star star, final StarModification.Builder modificationBuilder) {
+    // Be sure to record our empire_id in the request.
+    StarModification modification = modificationBuilder
+        .empire_id(EmpireManager.i.getMyEmpire().id)
+        .build();
+
     App.i.getTaskRunner().runTask(() -> {
       // If there's any auxiliary stars, grab them now, too.
       List<Star> auxiliaryStars = null;
@@ -79,11 +109,17 @@ public class StarManager {
 
       // Modify the star.
       Star.Builder starBuilder = star.newBuilder();
-      starModifier.modifyStar(
-          starBuilder,
-          auxiliaryStars,
-          Lists.newArrayList(modification),
-          null /* logHandler */);
+      try {
+        starModifier.modifyStar(
+            starBuilder,
+            auxiliaryStars,
+            Lists.newArrayList(modification),
+            null /* logHandler */);
+      } catch (SuspiciousModificationException e) {
+        // Mostly we don't care about these on the client, but it'll be good to log them.
+        log.error("Unexpected suspicious modification.", e);
+        return;
+      }
 
       // Save the now-modified star.
       Star newStar = starBuilder.build();

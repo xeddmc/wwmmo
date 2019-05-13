@@ -13,7 +13,6 @@ import java.util.Random;
 
 import javax.annotation.Nullable;
 import javax.imageio.ImageIO;
-import javax.servlet.http.HttpServletResponse;
 
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.Vector3;

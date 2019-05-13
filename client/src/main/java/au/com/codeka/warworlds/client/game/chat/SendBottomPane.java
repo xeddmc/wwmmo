@@ -1,9 +1,7 @@
 package au.com.codeka.warworlds.client.game.chat;
 
 import android.content.Context;
-import android.util.AttributeSet;
 import android.view.View;
-import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.RelativeLayout;
 
@@ -31,7 +29,7 @@ public class SendBottomPane extends RelativeLayout {
 
     inflate(context, R.layout.chat_send_bottom_pane, this);
 
-    message = (EditText) findViewById(R.id.message);
+    message = findViewById(R.id.message);
     findViewById(R.id.send_btn).setOnClickListener(this::onSendClick);
 
  //   message.setOnEditorActionListener((v, actionId, event) -> {

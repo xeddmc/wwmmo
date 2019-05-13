@@ -1,9 +1,5 @@
 package au.com.codeka.warworlds.client.ctrl;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -13,6 +9,10 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.squareup.picasso.Picasso;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 
 import au.com.codeka.warworlds.client.R;
 import au.com.codeka.warworlds.client.game.world.EmpireManager;
@@ -122,7 +122,7 @@ public class PlanetListSimple extends LinearLayout {
     View view = inflater.inflate(R.layout.ctrl_planet_list_simple_row, this, false);
 
     final ImageView icon = (ImageView) view.findViewById(R.id.starfield_planet_icon);
-    Picasso.with(getContext())
+    Picasso.get()
         .load(ImageHelper.getPlanetImageUrl(getContext(), star, planetIndex, 32, 32))
         .into(icon);
 
@@ -160,7 +160,7 @@ public class PlanetListSimple extends LinearLayout {
 
     Empire empire = EmpireManager.i.getEmpire(empireID);
     if (empire != null) {
-      Picasso.with(getContext())
+      Picasso.get()
           .load(ImageHelper.getEmpireImageUrl(getContext(), empire, 32, 32))
           .into(icon);
 

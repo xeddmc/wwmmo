@@ -11,7 +11,6 @@ import com.squareup.wire.Wire;
 import java.util.Locale;
 
 import au.com.codeka.warworlds.client.R;
-import au.com.codeka.warworlds.common.proto.BuildRequest;
 import au.com.codeka.warworlds.common.proto.Colony;
 import au.com.codeka.warworlds.common.proto.Star;
 

@@ -1,9 +1,9 @@
 package au.com.codeka.warworlds.client.opengl;
 
 import android.opengl.Matrix;
-import android.support.annotation.Nullable;
-import android.util.Log;
 import android.view.animation.DecelerateInterpolator;
+
+import androidx.annotation.Nullable;
 
 /**
  * The {@link Camera} can be used to draw a {@link Scene}, scroll and zoom around.
@@ -61,6 +61,10 @@ public class Camera {
 
   public float getScreenHeight() {
     return screenHeight;
+  }
+
+  public float getZoomAmount() {
+    return zoomAmount;
   }
 
   public void onDraw() {
@@ -126,5 +130,11 @@ public class Camera {
 
   public void zoom(float factor) {
     zoomAmount *= factor;
+    if (zoomAmount > 5.0f) {
+      zoomAmount = 5.0f;
+    }
+    if (zoomAmount < 0.25f) {
+      zoomAmount = 0.25f;
+    }
   }
 }

@@ -14,11 +14,17 @@ import au.com.codeka.warworlds.server.world.WatchableObject;
  * to the game socket.
  */
 public class PendingConnection {
+  private final ServerSocketManager manager;
   private final Account account;
   private final WatchableObject<Empire> empire;
   private final byte[] encryptionKey;
 
-  public PendingConnection(Account account, WatchableObject<Empire> empire, byte[] encryptionKey) {
+  public PendingConnection(
+      ServerSocketManager manager,
+      Account account,
+      WatchableObject<Empire> empire,
+      byte[] encryptionKey) {
+    this.manager = manager;
     this.account = account;
     this.empire = empire;
     this.encryptionKey = encryptionKey;
@@ -31,6 +37,7 @@ public class PendingConnection {
       PacketDecoder decoder,
       OutputStream outs) {
     Connection conn = new Connection(
+        manager,
         helloPacket,
         account,
         empire,

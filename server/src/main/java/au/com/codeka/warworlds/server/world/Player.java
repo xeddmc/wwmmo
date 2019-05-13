@@ -1,6 +1,5 @@
 package au.com.codeka.warworlds.server.world;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 
 import java.util.ArrayList;
@@ -22,8 +21,10 @@ import au.com.codeka.warworlds.common.proto.RequestEmpirePacket;
 import au.com.codeka.warworlds.common.proto.Sector;
 import au.com.codeka.warworlds.common.proto.SectorCoord;
 import au.com.codeka.warworlds.common.proto.Star;
+import au.com.codeka.warworlds.common.proto.StarModification;
 import au.com.codeka.warworlds.common.proto.StarUpdatedPacket;
 import au.com.codeka.warworlds.common.proto.WatchSectorsPacket;
+import au.com.codeka.warworlds.common.sim.SuspiciousModificationException;
 import au.com.codeka.warworlds.server.concurrency.TaskRunner;
 import au.com.codeka.warworlds.server.concurrency.Threads;
 import au.com.codeka.warworlds.server.net.Connection;
@@ -43,10 +44,10 @@ public class Player {
   private final WatchableObject<Empire> empire;
 
   /** The list of {@link Sector}s this player is currently watching. */
-  private final ArrayList<WatchableObject<Sector>> sectors = new ArrayList<>();
+  private final ArrayList<WatchableObject<Sector>> watchedSectors = new ArrayList<>();
 
   /** The {@link Star}s that we are currently watching. */
-  private final Map<Long, WatchableObject<Star>> stars = new HashMap<>();
+  private final Map<Long, WatchableObject<Star>> watchedStars = new HashMap<>();
 
   /** The {@link WatchableObject.Watcher} which we'll be watching stars with. */
   private final WatchableObject.Watcher<Star> starWatcher;
@@ -58,13 +59,11 @@ public class Player {
     this.connection = checkNotNull(connection);
     this.empire = checkNotNull(empire);
 
-    starWatcher = star -> {
-      connection.send(new Packet.Builder()
-          .star_updated(new StarUpdatedPacket.Builder()
-              .stars(Lists.newArrayList(star.get()))
-              .build())
-          .build());
-    };
+    starWatcher = star -> connection.send(new Packet.Builder()
+        .star_updated(new StarUpdatedPacket.Builder()
+            .stars(Lists.newArrayList(star.get()))
+            .build())
+        .build());
 
     TaskRunner.i.runTask(this::onPostConnect, Threads.BACKGROUND);
   }
@@ -123,27 +122,30 @@ public class Player {
    */
   public void onDisconnect() {
     ChatManager.i.disconnectPlayer(empire.get().id);
+
+    clearWatchedStars();
+    synchronized (watchedSectors) {
+      watchedSectors.clear();
+    }
   }
 
   private void onWatchSectorsPacket(WatchSectorsPacket pkt) {
     // TODO: if we're already watching some of these sectors, we can just keep watching those,
 
     // Remove all our current watched stars
-    synchronized (stars) {
-      for (WatchableObject<Star> star : stars.values()) {
-        star.removeWatcher(starWatcher);
-      }
-    }
+    clearWatchedStars();
 
-    sectors.clear();
     List<Star> stars = new ArrayList<>();
-    for (long sectorY = pkt.top; sectorY <= pkt.bottom; sectorY ++) {
-      for (long sectorX = pkt.left; sectorX <= pkt.right; sectorX ++) {
-        WatchableObject<Sector> sector =
-            SectorManager.i.getSector(new SectorCoord.Builder().x(sectorX).y(sectorY).build());
-        SectorManager.i.verifyNativeColonies(sector);
-        sectors.add(sector);
-        stars.addAll(sector.get().stars);
+    synchronized (watchedSectors) {
+      watchedSectors.clear();
+      for (long sectorY = pkt.top; sectorY <= pkt.bottom; sectorY++) {
+        for (long sectorX = pkt.left; sectorX <= pkt.right; sectorX++) {
+          WatchableObject<Sector> sector =
+              SectorManager.i.getSector(new SectorCoord.Builder().x(sectorX).y(sectorY).build());
+          SectorManager.i.verifyNativeColonies(sector);
+          watchedSectors.add(sector);
+          stars.addAll(sector.get().stars);
+        }
       }
     }
 
@@ -153,18 +155,53 @@ public class Player {
             .build())
         .build());
 
-    synchronized (this.stars) {
+    synchronized (watchedStars) {
       for (Star star : stars) {
         WatchableObject<Star> watchableStar = StarManager.i.getStar(star.id);
+        if (watchableStar == null) {
+          // Huh?
+          log.warning("Got unexpected null star: %d", star.id);
+          continue;
+        }
         watchableStar.addWatcher(starWatcher);
-        this.stars.put(star.id, watchableStar);
+        watchedStars.put(star.id, watchableStar);
       }
     }
   }
 
   private void onModifyStar(ModifyStarPacket pkt) {
     WatchableObject<Star> star = StarManager.i.getStar(pkt.star_id);
-    StarManager.i.modifyStar(star, pkt.modification, null /* logHandler */);
+    for (StarModification modification : pkt.modification) {
+      if (modification.empire_id == null || !modification.empire_id.equals(empire.get().id)) {
+        // Update the modification's empire_id to be our own, since that's what'll be recorded
+        // in the database and we don't want this suspicious event to be recorded against the
+        // other person's empire.
+        Long otherEmpireId = modification.empire_id;
+        modification = modification.newBuilder().empire_id(empire.get().id).build();
+
+        SuspiciousEventManager.i.addSuspiciousEvent(new SuspiciousModificationException(
+            pkt.star_id,
+            modification,
+            "Modification empire_id does not equal our own empire. empire_id=%d",
+            otherEmpireId));
+        return;
+      }
+
+      if (modification.full_fuel != null && modification.full_fuel) {
+        // Clients shouldn't be trying to create fleets at all, but they should also not be trying
+        // fill them with fuel. That's suspicious.
+        SuspiciousEventManager.i.addSuspiciousEvent(new SuspiciousModificationException(
+            pkt.star_id, modification, "Modification tried to set full_fuel to true."));
+        return;
+      }
+    }
+
+    try {
+      StarManager.i.modifyStar(star, pkt.modification, null /* logHandler */);
+    } catch (SuspiciousModificationException e) {
+      SuspiciousEventManager.i.addSuspiciousEvent(e);
+      log.warning("Suspicious star modification.", e);
+    }
   }
 
   private void onRequestEmpire(RequestEmpirePacket pkt) {
@@ -207,4 +244,13 @@ public class Player {
           .build());
     }
   };
+
+  private void clearWatchedStars() {
+    synchronized (watchedStars) {
+      for (WatchableObject<Star> star : watchedStars.values()) {
+        star.removeWatcher(starWatcher);
+      }
+      watchedStars.clear();
+    }
+  }
 }

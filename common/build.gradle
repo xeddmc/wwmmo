@@ -1,3 +1,5 @@
+import groovy.io.FileType
+
 apply plugin: 'java'
 
 repositories {
@@ -9,28 +11,42 @@ tasks.withType(JavaCompile) {
   targetCompatibility = "1.8"
 }
 
-task buildProto() {
-  def protos = []
-  fileTree(dir: "src/main/proto").matching { include "*.proto" }.visit {
-    FileVisitDetails details ->
-      protos << details.file.name
-  }
+def fixProtoPath(str) {
+  def prefix = projectDir.path + "/src/main/proto/".replace("/", File.separator)
+  return (str - prefix).replace(File.separator, "/")
+}
 
-  javaexec {
-    main = "-jar"
-    args = [
-        "libs/wire-compiler-2.1.2-jar-with-dependencies.jar",
-        "--proto_path=src/main/proto",
-        "--java_out=src/main/java",
-    ] + protos
+task buildProto() {
+  doLast {
+    def protos = []
+    new File(projectDir.path + "/src/main/proto").eachFileRecurse(FileType.FILES) { file ->
+      protos << fixProtoPath(file.absolutePath)
+    }
+
+    javaexec {
+      main = "-jar"
+      args = [
+         "libs/wire-compiler-2.1.2-jar-with-dependencies.jar",
+         "--proto_path=src/main/proto",
+         "--named_files_only",
+         "--java_out=src/main/java",
+      ] + protos
+    }
   }
 }
 
 compileJava.dependsOn buildProto
 
+test {
+  testLogging {
+    // Show that tests are run in the command-line output
+    events 'passed'
+  }
+}
+
 dependencies {
-  compile fileTree(dir: 'libs', include: ['*.jar'])
-  compile 'com.squareup.wire:wire-runtime:2.1.2'
-  compile 'com.google.code.findbugs:jsr305:3.0.0'
-  compile 'com.google.guava:guava:20.0'
+  implementation 'com.squareup.wire:wire-runtime:2.1.2'
+  implementation 'com.google.code.findbugs:jsr305:3.0.2'
+  implementation 'com.google.guava:guava:24.1-android'
+  testCompile 'junit:junit:4.12'
 }

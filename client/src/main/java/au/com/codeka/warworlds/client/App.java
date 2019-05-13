@@ -4,14 +4,15 @@ import android.app.Application;
 import android.os.Handler;
 
 import com.google.common.base.Preconditions;
+import com.google.firebase.FirebaseApp;
 
 import au.com.codeka.warworlds.client.concurrency.TaskRunner;
 import au.com.codeka.warworlds.client.concurrency.Threads;
 import au.com.codeka.warworlds.client.game.world.ChatManager;
+import au.com.codeka.warworlds.client.game.world.StarManager;
 import au.com.codeka.warworlds.client.net.Server;
 import au.com.codeka.warworlds.client.store.DataStore;
 import au.com.codeka.warworlds.client.util.eventbus.EventBus;
-import au.com.codeka.warworlds.client.game.world.StarManager;
 import au.com.codeka.warworlds.common.Log;
 
 /**

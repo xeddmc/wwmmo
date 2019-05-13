@@ -11,8 +11,8 @@ import javax.servlet.http.HttpServletResponse;
 import au.com.codeka.warworlds.common.Log;
 import au.com.codeka.warworlds.common.proto.AdminRole;
 import au.com.codeka.warworlds.server.admin.Session;
-import au.com.codeka.warworlds.server.handlers.RequestException;
 import au.com.codeka.warworlds.server.handlers.FileHandler;
+import au.com.codeka.warworlds.server.handlers.RequestException;
 
 /** Simple handler for handling static files (and 'templated' HTML files with no templated data). */
 public class AdminFileHandler extends AdminHandler {

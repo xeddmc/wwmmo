@@ -1,5 +1,17 @@
 package au.com.codeka.warworlds.planetrender.ui;
 
+import au.com.codeka.warworlds.common.Colour;
+import au.com.codeka.warworlds.common.Image;
+import au.com.codeka.warworlds.common.PerlinNoise;
+import au.com.codeka.warworlds.common.PointCloud;
+import au.com.codeka.warworlds.common.Voronoi;
+import au.com.codeka.warworlds.planetrender.PlanetRenderer;
+import au.com.codeka.warworlds.planetrender.Template;
+import au.com.codeka.warworlds.planetrender.TemplateException;
+import au.com.codeka.warworlds.planetrender.TemplatedPerlinNoise;
+import au.com.codeka.warworlds.planetrender.TemplatedPointCloud;
+import au.com.codeka.warworlds.planetrender.TemplatedVoronoi;
+import au.com.codeka.warworlds.planetrender.TextureGenerator;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -12,9 +24,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Random;
-
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -28,19 +40,6 @@ import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JToolBar;
-
-import au.com.codeka.warworlds.common.Colour;
-import au.com.codeka.warworlds.common.Image;
-import au.com.codeka.warworlds.common.PerlinNoise;
-import au.com.codeka.warworlds.common.PointCloud;
-import au.com.codeka.warworlds.common.Voronoi;
-import au.com.codeka.warworlds.planetrender.PlanetRenderer;
-import au.com.codeka.warworlds.planetrender.Template;
-import au.com.codeka.warworlds.planetrender.TemplateException;
-import au.com.codeka.warworlds.planetrender.TemplatedPerlinNoise;
-import au.com.codeka.warworlds.planetrender.TemplatedPointCloud;
-import au.com.codeka.warworlds.planetrender.TemplatedVoronoi;
-import au.com.codeka.warworlds.planetrender.TextureGenerator;
 
 /**
  * This is the shared implemented (between the applet and the Swing application). It's got all of
@@ -247,21 +246,13 @@ public class AppContent extends JPanel {
   }
 
   private String[] getTemplateNames() {
-    ArrayList<String> fileNames = new ArrayList<>();
     File[] files = getSamplesDirectory().listFiles();
     if (files == null) {
       return new String[] {};
     }
 
-    for (File file : files) {
-      String name = file.getName();
-      if (!name.endsWith(".xml")) {
-        continue;
-      }
-      name = name.substring(0, name.length() - 4);
-      name = name.replace('-', ' ');
-      fileNames.add(name);
-    }
+    ArrayList<String> fileNames = new ArrayList<>();
+    getTemplateNames(getSamplesDirectory(), "", fileNames);
 
     String[] array = new String[fileNames.size()];
     fileNames.toArray(array);
@@ -269,9 +260,30 @@ public class AppContent extends JPanel {
     return array;
   }
 
+  private void getTemplateNames(File rootDir, String prefix, List<String> fileNames) {
+    File[] files = rootDir.listFiles();
+    if (files == null) {
+      return;
+    }
+
+    for (File file : files) {
+      if (file.isDirectory() && !file.getName().startsWith(".")) {
+        getTemplateNames(file, prefix + file.getName() + File.separator, fileNames);
+        continue;
+      }
+
+      String name = file.getName();
+      if (!name.endsWith(".xml")) {
+        continue;
+      }
+
+      fileNames.add(prefix + name);
+    }
+  }
+
   private String loadTemplate(String name) {
     File dir = getSamplesDirectory();
-    File templateFile = new File(dir, name.replace(' ', '-') + ".xml");
+    File templateFile = new File(dir, name);
     try {
       return new String(Files.readAllBytes(Paths.get(templateFile.toString())),
           Charset.forName("utf-8"));
@@ -281,6 +293,6 @@ public class AppContent extends JPanel {
   }
 
   private File getSamplesDirectory() {
-    return new File("xml");
+    return new File("renderer");
   }
 }

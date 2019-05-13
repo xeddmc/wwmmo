@@ -1,3 +1,5 @@
+import groovy.io.FileType
+
 buildscript {
   repositories {
     jcenter()
@@ -16,54 +18,55 @@ apply plugin: 'application'
 apply plugin: 'org.hidetake.ssh'
 
 dependencies {
-  compile 'joda-time:joda-time:2.3'
-  compile 'com.google.api-client:google-api-client:1.22.0'
-  compile 'com.google.api-client:google-api-client-gson:1.22.0'
-  compile 'com.google.code.findbugs:jsr305:3.0.0'
-  compile 'com.google.code.gson:gson:2.8.0'
-  compile 'com.google.firebase:firebase-admin:4.1.1'
-  compile 'com.google.guava:guava:21.0'
-  compile 'com.squareup.wire:wire-gson-support:2.1.2'
-  compile 'org.simplejavamail:simple-java-mail:4.2.1'
-  compile 'org.eclipse.jetty:jetty-server:9.4.0.v20161208'
-  compile 'org.eclipse.jetty.websocket:websocket-server:9.4.0.v20161208'
-  compile 'org.xerial:sqlite-jdbc:3.16.1'
-  compile project(':carrot')
-  compile project(':common')
-  compile project(':planet-render')
+  implementation 'au.com.codeka:carrot:2.4.1'
+  implementation 'joda-time:joda-time:2.9.9'
+  implementation 'com.google.api-client:google-api-client:1.25.0'
+  implementation 'com.google.api-client:google-api-client-gson:1.25.0'
+  implementation 'com.google.code.findbugs:jsr305:3.0.2'
+  implementation 'com.google.code.gson:gson:2.8.2'
+  implementation 'com.google.firebase:firebase-admin:6.5.0'
+  implementation 'com.google.guava:guava:24.1-jre'
+  implementation 'com.squareup.wire:wire-gson-support:2.1.2'
+  implementation 'org.simplejavamail:simple-java-mail:4.2.1'
+  implementation 'org.eclipse.jetty:jetty-server:9.4.0.v20161208'
+  implementation 'org.eclipse.jetty.websocket:websocket-server:9.4.0.v20161208'
+  implementation 'org.xerial:sqlite-jdbc:3.16.1'
+  implementation 'com.patreon:patreon:0.4.2'
+  implementation project(':common')
+  implementation project(':planet-render')
 }
 
-task dataFiles {
-  // want to include more than just a single directory
-  FileTree data = fileTree(dir: "src/main/data/")
-  data.exclude "store/*"
-  data.exclude "cache/*"
-  outputs.dir data
+def fixProtoPath(str) {
+  def prefix = projectDir.path + "/src/main/proto/".replace("/", File.separator)
+  return (str - prefix).replace(File.separator, "/")
 }
 
 task buildProto() {
-  def protos = []
-  fileTree(dir: "src/main/proto").matching { include "*.proto" }.visit {
-    FileVisitDetails details ->
-      protos << details.file.name
-  }
+  doLast {
+    def protos = []
+    new File(projectDir.path + "/src/main/proto").eachFileRecurse(FileType.FILES) { file ->
+      protos << fixProtoPath(file.absolutePath)
+    }
 
-  javaexec {
-    main = "-jar"
-    args = [
-        project(':common').projectDir.getAbsolutePath() + "/libs/wire-compiler-2.1.2-jar-with-dependencies.jar",
-        "--proto_path=src/main/proto",
-        "--proto_path=" + project(':common').projectDir.getAbsolutePath() + "/src/main/proto",
-        "--named_files_only",
-        "--java_out=src/main/java",
-    ] + protos
+    javaexec {
+      main = "-jar"
+      args = [
+         project(':common').projectDir.getAbsolutePath() + "/libs/wire-compiler-2.1.2-jar-with-dependencies.jar",
+         "--proto_path=src/main/proto",
+         "--proto_path=" + project(':common').projectDir.getAbsolutePath() + "/src/main/proto",
+         "--named_files_only",
+         "--java_out=src/main/java",
+      ] + protos
+    }
   }
 }
 
 compileJava.dependsOn buildProto
 
-applicationDistribution.from(dataFiles) {
+applicationDistribution.from("src/main/data") {
   into "data"
+  exclude "store/**"
+  exclude "cache/**"
 }
 
 mainClassName = "au.com.codeka.warworlds.server.Program"
@@ -80,9 +83,14 @@ remotes {
   }
 }
 
+startScripts {
+  doLast {
+    // Remove too-long-classpath and use wildcard ( works for java 6 and above only)
+    windowsScript.text = windowsScript.text.replaceAll('set CLASSPATH=.*', 'set CLASSPATH=.;%APP_HOME%/lib/*')
+  }
+}
+
 task deploy(type: Exec, dependsOn: 'installDist') {
   workingDir "${buildDir}/install/server"
-  commandLine "sh", "-c", "rsync -a -e" +
-      " 'ssh -o UserKnownHostsFile=${projectDir}/../../known_hosts -i ${projectDir}/../../wwmmo2.id_rsa'" +
-      " . wwmmo@wwmmo.codeka.com.au:/home/wwmmo/staging"
+  commandLine "rsync", "-crlD", "--chmod=ugo=rwX", ".", "wwmmo@wwmmo.codeka.com.au:/home/wwmmo/staging"
 }

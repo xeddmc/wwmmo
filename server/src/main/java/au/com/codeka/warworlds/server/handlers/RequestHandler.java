@@ -21,8 +21,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import au.com.codeka.warworlds.common.Log;
-import au.com.codeka.warworlds.common.proto.AdminRole;
-import au.com.codeka.warworlds.server.admin.Session;
 
 /**
  * This is the base class for the game's request handlers. It handles some common tasks such as
@@ -70,16 +68,21 @@ public class RequestHandler {
         return;
       }
 
-      if (request.getMethod().equals("GET")) {
-        get();
-      } else if (request.getMethod().equals("POST")) {
-        post();
-      } else if (request.getMethod().equals("PUT")) {
-        put();
-      } else if (request.getMethod().equals("DELETE")) {
-        delete();
-      } else {
-        throw new RequestException(501);
+      switch (request.getMethod()) {
+        case "GET":
+          get();
+          break;
+        case "POST":
+          post();
+          break;
+        case "PUT":
+          put();
+          break;
+        case "DELETE":
+          delete();
+          break;
+        default:
+          throw new RequestException(501);
       }
     } catch (RequestException e) {
       handleException(e);
@@ -138,7 +141,7 @@ public class RequestHandler {
         String.format(Locale.US, "private, max-age=%d", (int)(hours * 3600)));
     if (etag != null) {
       etag = BaseEncoding.base64().encode(
-          Hashing.sha1().hashString(etag, Charset.defaultCharset()).asBytes());
+          Hashing.sha256().hashString(etag, Charset.defaultCharset()).asBytes());
       response.setHeader("ETag", String.format("\"%s\"", etag));
     }
   }
@@ -160,9 +163,17 @@ public class RequestHandler {
       PrintWriter writer = response.getWriter();
       Gson gson = new GsonBuilder()
           .registerTypeAdapterFactory(new WireTypeAdapterFactory())
+          .serializeSpecialFloatingPointValues()
           .disableHtmlEscaping()
           .create();
-      writer.write(gson.toJson(pb));
+      String json = gson.toJson(pb);
+      // serializeSpecialFloatingPointValues() will insert literal "Infinity" "-Infinity" and "NaN"
+      // which is not valid JSON. We'll replace those with nulls in a kind-naive way.
+      json = json
+          .replaceAll(":Infinity", ":null")
+          .replaceAll(":-Infinity", ":null")
+          .replaceAll(":NaN", ":null");
+      writer.write(json);
       writer.flush();
     } catch (IOException e) {
       // Ignore.
